@@ -1,0 +1,15 @@
+{
+  "name": "cli-agent-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent Codex CLI worker runner extracted from the last verified process-runner implementation.",
+  "type": "module",
+  "bin": {
+    "cli-agent-runner": "./bin/cli-agent-runner.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:cli": "node --test tests/metacognitive-gate.test.mjs tests/workflow-state.test.mjs",
+    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd ."
+  }
+}
