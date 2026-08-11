@@ -1207,6 +1207,69 @@ test("completed codex-cli runner result is terminal without follow-up collection
   }
 });
 
+test("runner prompt makes exact expected_output authoritative and fallback sections conditional", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
+  try {
+    intake(repo, {
+      task: "Repair a conflicting runner output contract",
+      taskId: "output-contract",
+      epoch: "e1",
+      scope: "README.md",
+      workType: "debug",
+    });
+    const fakeCodex = path.join(fakeBin, "codex");
+    writeFileSync(fakeCodex, `#!/usr/bin/env node
+const { writeFileSync } = require("node:fs");
+const args = process.argv.slice(2);
+const prompt = args[args.length - 1] || "";
+if (!prompt.includes("expected_output is the authoritative response-shape contract")) process.exit(7);
+if (!prompt.includes("When expected_output defines an exact format, return only that format and do not append fallback sections")) process.exit(8);
+if (!prompt.includes("When expected_output does not define a response format, use exactly these concise fallback sections")) process.exit(9);
+if (!prompt.includes("represent every required field within the authoritative expected_output response shape")) process.exit(10);
+if (prompt.includes("Return exactly these sections")) process.exit(11);
+const outputIndex = args.indexOf("--output-last-message");
+if (outputIndex !== -1) writeFileSync(args[outputIndex + 1], "EXACT_RESULT", "utf8");
+process.stdout.write("fake codex completed\\n");
+`, "utf8");
+    chmodSync(fakeCodex, 0o755);
+
+    const run = runCli([
+      "run",
+      "--target-cwd",
+      repo,
+      "--role",
+      "Test Runner",
+      "--task-id",
+      "output-contract",
+      "--epoch",
+      "e1",
+      "--scope",
+      "README.md",
+      "--work-type",
+      "debug",
+      "--assignment",
+      "Return exactly EXACT_RESULT and do not add any other text",
+      "--expected-output",
+      "Exactly: EXACT_RESULT",
+      "--runner",
+      "codex-cli",
+      "--no-live-console",
+    ], {
+      env: {
+        ...process.env,
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+      },
+    });
+
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /ok summary: EXACT_RESULT/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
+});
+
 test("unknown feature profiles fail before runner state is appended", () => {
   const repo = makeTempGitRepo();
   try {
