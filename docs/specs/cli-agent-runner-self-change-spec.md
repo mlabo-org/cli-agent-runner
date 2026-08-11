@@ -188,6 +188,12 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      visible.
 
 9. Worker-result collection and task finalization
+   - `expected_output` owns any explicitly declared worker-response shape. The
+     generated sectioned worker-result format is a fallback only when
+     `expected_output` does not define a response format. Applicable gate content
+     and result-relevant typed references must be represented within an explicit
+     response shape; an impossible combination is a reported contract blocker,
+     not permission to choose silently between competing formats.
    - `collect` records a `worker-result-collection` packet plus its
      workflow-state-only lifecycle disposition. Completed collection does not
      require complete task-wide D-*/C-*/source-spec coverage, and multiple

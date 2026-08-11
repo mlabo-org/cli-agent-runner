@@ -1186,7 +1186,17 @@ Lifecycle:
 - ${CHILD_RETURN_LIFECYCLE}
 - ${SUBAGENT_LIFECYCLE}
 
-Return exactly these sections, kept concise:
+${renderRunnerOutputContract(packet)}
+`;
+}
+
+function renderRunnerOutputContract(packet) {
+  return `Final response contract:
+- expected_output is the authoritative response-shape contract.
+- When expected_output defines an exact format, return only that format and do not append fallback sections.
+- Satisfy every applicable content requirement, including gate-required fields and relevant typed references, within that authoritative format.
+- If an exact expected_output cannot represent an applicable required field, report the contract conflict as a blocker instead of silently choosing a competing format.
+- When expected_output does not define a response format, use exactly these concise fallback sections:
 - findings:
 - changed_files:
 - verification:
@@ -3995,7 +4005,7 @@ ${METACOGNITIVE_GATE_NAME}:
 - metacognitive_gate_required: true
 - metacognitive_gate_triggers: ${formatTriggers(packet.metacognitiveGate)}
 - ${METACOGNITIVE_GATE_CONTRACT}
-- A completed result must fill every field listed in the return sections below. Blocked or unresolved work must name the blocker and next_investigation.`;
+- A completed result must represent every required field within the authoritative expected_output response shape. Use the fallback fields below only when expected_output does not define a format. Blocked or unresolved work must name the blocker and next_investigation.`;
 }
 
 function renderMetacognitiveReturnSections(packet) {
