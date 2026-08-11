@@ -58,6 +58,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "User-Configured CLI Runner Registry",
     "stdout/stderr And Final-Message Capture",
     "Default-On Prestarted Token-Protected IAB Live Console",
+    "Live Console Continuity Across User-Input Pauses",
     "Provider-Neutral Text And JSON Event Streaming",
     "Protected Runner-Profile Delegation Ceilings",
     "Terminal Minimal Result For Successful Runs",
@@ -71,6 +72,8 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(manifest.interface.longDescription, /changing a declared profile default requires an admitted user, safety, scope, or capability reason/i);
   assert.match(manifest.interface.longDescription, /Bundled Grok permits direct children by default/i);
   assert.match(manifest.interface.longDescription, /starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation/i);
+  assert.match(manifest.interface.longDescription, /keeps it alive across user-confirmation pauses/i);
+  assert.match(manifest.interface.longDescription, /restores or reopens it before resuming/i);
   assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
   assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
   assert.match(manifest.interface.longDescription, /streams emitted stdout\/stderr or structured messages/i);
@@ -105,6 +108,10 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(skill, /Only a current explicit silent\/no-console\/OFF instruction selects console-free execution/i);
   assert.match(skill, /Direct CLI `run\|orchestrate --runner <id>` without a URL starts an owned console by default/i);
   assert.match(skill, /If the default console cannot start or its viewer cannot be opened, stop before target intake or worker launch/i);
+  assert.match(skill, /Before yielding a user-input question, keep the standalone console process running/i);
+  assert.match(skill, /finalize its IAB tab with `status: handoff`/i);
+  assert.match(skill, /On the resumed turn, restore the Live Console before continuing project work/i);
+  assert.match(skill, /Never resume headless merely because a console was opened in an earlier turn/i);
 
   assert.equal(defaultRunners.version, 1);
   assert.deepEqual(Object.keys(defaultRunners.runners).sort(), ["claude-cli", "codex-cli", "grok-cli"]);
@@ -120,8 +127,9 @@ test("agents metadata advertises the multi-CLI Live Console route", () => {
 
   assert.match(shortDescription, /IAB Live Console/i);
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
-  assert.match(defaultPrompt, /open its IAB Live Console before project work/i);
-  assert.match(defaultPrompt, /launch a scoped Grok or CLI worker/i);
-  assert.match(defaultPrompt, /keep profile delegation ceilings unless an authorized override applies/i);
+  assert.match(defaultPrompt, /open its IAB Live Console first/i);
+  assert.match(defaultPrompt, /keep it across user-confirmation pauses/i);
+  assert.match(defaultPrompt, /restore it before resuming/i);
+  assert.match(defaultPrompt, /launch the scoped CLI worker/i);
   assert.match(defaultPrompt, /stop after a minimal completed result on exit zero/i);
 });

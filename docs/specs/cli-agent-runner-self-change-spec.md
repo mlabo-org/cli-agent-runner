@@ -265,7 +265,15 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - The normal plugin-owned runner path uses
      `run --runner <id> --live-console-url <url>` to reuse that already visible
      console. The parent owns persistent-terminal launch, supported IAB opening,
-     final observation, and cleanup when the task ends or the user stops it.
+     pause/resume continuity, final observation, and cleanup when the task
+     actually ends or the user stops it.
+   - A blocking permission, approval, clarification, or target-selection
+     question is an in-progress pause. The parent keeps the console process
+     running and hands off the IAB tab instead of closing either surface.
+   - On resume, the parent reclaims and checks the handed-off viewer before
+     continuing. If the process or tab was lost, it starts and opens a
+     replacement before intake, edits, or worker launch; resuming headless is
+     not allowed.
    - Direct `run|orchestrate --runner <id>` owns a Live Console by default when
      no prestarted URL or explicit OFF selector is supplied. It starts the secure
      server before assignment append or worker launch, injects its ingest URL,

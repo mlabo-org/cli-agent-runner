@@ -18,7 +18,9 @@ Live Console is default-on. Omission is not an OFF signal; only an explicit sile
 2. Read `live_console_viewer_url` and open it in Codex IAB immediately. The empty viewer is the ready/standby state.
 3. Launch each later scoped worker with `run --runner <id> --live-console-url <url>` so it publishes into the console that is already open.
 4. Watch the selected run's ordered activity and details. The timeline groups consecutive textless provider envelopes, renders the latest 120 filtered events by default, and exposes older history explicitly. `All`, `Signal`, and `Errors` filters affect presentation only; the bounded run state and exact event envelopes remain available. Follow-latest can be disabled by scrolling away and restored without pausing the worker.
-5. After each runner result, inspect the final state and keep the console ready for later work in the same task. Send Ctrl-C to the standalone console session and wait for exit when the task ends or the user stops it.
+5. Before any permission, approval, clarification, or target-selection question, keep the standalone console process running and hand off the IAB tab so it remains visible across the user turn.
+6. When the user replies, reclaim and verify the handed-off viewer before continuing. If the process or tab was lost, start and open a replacement first; never resume the workflow headless.
+7. After each runner result, inspect the final state and keep the console ready for later work in the same task. Send Ctrl-C to the standalone console session and wait for exit only when the task actually ends, the user stops it, or Live Console is explicitly turned off.
 
 The CLI deliberately prints a normal localhost URL rather than calling private Codex GUI IPC. The parent Codex session owns opening that URL in IAB.
 
