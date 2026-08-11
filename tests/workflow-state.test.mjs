@@ -1785,6 +1785,68 @@ process.stdout.write("fake codex completed\\n");
   }
 });
 
+test("codex-cli runner fails closed when post-run Git inspection is unavailable", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
+  try {
+    intake(repo, { taskId: "runner-git-inspection", epoch: "e1", scope: "allowed.txt" });
+    const marker = path.join(fakeBin, "fail-scope-status");
+    const systemGit = spawnSync("which", ["git"], { encoding: "utf8" }).stdout.trim();
+    const fakeGit = path.join(fakeBin, "git");
+    writeFileSync(fakeGit, `#!/usr/bin/env node
+const { existsSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const args = process.argv.slice(2);
+if (existsSync(${JSON.stringify(marker)}) && args.includes("--porcelain=v1")) {
+  process.stderr.write("simulated post-run Git status failure\\n");
+  process.exit(2);
+}
+const result = spawnSync(${JSON.stringify(systemGit)}, args, { stdio: "inherit" });
+process.exit(result.status ?? 1);
+`, "utf8");
+    chmodSync(fakeGit, 0o755);
+    const fakeCodex = path.join(fakeBin, "codex");
+    writeFileSync(fakeCodex, `#!/usr/bin/env node
+const { writeFileSync } = require("node:fs");
+writeFileSync(${JSON.stringify(marker)}, "fail", "utf8");
+process.stdout.write("fake codex completed\\n");
+`, "utf8");
+    chmodSync(fakeCodex, 0o755);
+
+    const run = runCli([
+      "run",
+      "--target-cwd",
+      repo,
+      "--role",
+      "Implementer",
+      "--task-id",
+      "runner-git-inspection",
+      "--epoch",
+      "e1",
+      "--scope",
+      "allowed.txt",
+      "--assignment",
+      "exercise fail-closed Git inspection",
+      "--expected-output",
+      "runner result",
+      "--runner",
+      "codex-cli",
+      "--no-live-console",
+    ], {
+      env: pathWithFakeCodex(fakeBin),
+    });
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /scope guard could not inspect Git changes/);
+    const runner = readState(repo, "runner.md");
+    assert.match(runner, /status: failed/);
+    assert.match(runner, /failure: scope guard could not inspect Git changes/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
+});
+
 test("codex-cli runner refuses pre-existing dirty paths outside scope before appending or launching", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
