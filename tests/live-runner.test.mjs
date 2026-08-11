@@ -116,6 +116,84 @@ test("CLI streams a Grok-shaped messages fixture into the built-in Live Console 
   }
 });
 
+test("orchestrate gives parallel jobs distinct Live Console run IDs and event streams", async () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-live-orchestrate-"));
+  const configPath = path.join(controlDir, "runners.json");
+  const jobsPath = path.join(controlDir, "jobs.json");
+  const liveConsole = await startLiveConsole({ viewerRoot: path.join(REPO_ROOT, "viewer") });
+  try {
+    intake(repo);
+    writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      runners: {
+        "parallel-live-fixture": {
+          command: process.execPath,
+          args: ["-e", fixtureProgram(), "{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+          stream: "messages-json",
+        },
+      },
+    }, null, 2));
+    writeFileSync(jobsPath, JSON.stringify({
+      version: 1,
+      jobs: [
+        {
+          id: "alpha-live",
+          role: "Implementer",
+          ownerScope: "alpha/",
+          assignment: "Emit alpha activity",
+          expectedOutput: "Alpha Live Console result",
+        },
+        {
+          id: "beta-live",
+          role: "Test Runner",
+          ownerScope: "beta/",
+          assignment: "Emit beta activity",
+          expectedOutput: "Beta Live Console result",
+        },
+      ],
+    }, null, 2));
+
+    const execution = runCli([
+      "orchestrate",
+      "--target-cwd", repo,
+      "--task-id", "live-fixture",
+      "--epoch", "e1",
+      "--scope", "scope:v1 all",
+      "--work-type", "documentation",
+      "--runner", "parallel-live-fixture",
+      "--runner-config", configPath,
+      "--jobs-file", jobsPath,
+      "--live-console-url", liveConsole.viewerUrl,
+    ]);
+
+    await waitFor(() => {
+      const runs = liveConsole.snapshot().runs;
+      return runs.length === 2 && runs.every((run) => run.events.some((event) => event.type === "runner.message"));
+    });
+    const inFlightRuns = liveConsole.snapshot().runs;
+    assert.equal(new Set(inFlightRuns.map((run) => run.runId)).size, 2);
+    assert.ok(inFlightRuns.some((run) => run.runId.includes(":alpha-live:")));
+    assert.ok(inFlightRuns.some((run) => run.runId.includes(":beta-live:")));
+
+    const completed = await execution;
+    assert.equal(completed.status, 0, completed.stderr);
+    const completedRuns = liveConsole.snapshot().runs;
+    assert.equal(completedRuns.length, 2);
+    for (const run of completedRuns) {
+      assert.equal(run.status, "completed");
+      assert.equal(run.events[0].type, "run.started");
+      assert.equal(run.events.at(-1).type, "run.completed");
+    }
+  } finally {
+    await liveConsole.close();
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
 test("run owns Live Console by default and only explicit OFF flags disable it", async () => {
   const repo = makeTempGitRepo();
   const configPath = path.join(repo, "runners.json");

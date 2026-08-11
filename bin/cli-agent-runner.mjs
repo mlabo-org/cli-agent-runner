@@ -291,7 +291,8 @@ async function main() {
     else if (args.command === "assign") assign(args);
     else if (args.command === "collect") collect(args);
     else if (args.command === "finalize") finalize(args);
-    else if (args.command === "run" || args.command === "orchestrate") await run(args);
+    else if (args.command === "run") await run(args);
+    else if (args.command === "orchestrate") await orchestrate(args);
     else if (args.command === "live-console") await liveConsole(args);
     else fail(`unknown command: ${args.command}`, 1);
   } catch (error) {
@@ -515,6 +516,239 @@ async function run(args) {
   console.log("ok note: real process orchestration is deferred; runner recorded the scoped assignment and skeleton only");
 }
 
+async function orchestrate(args) {
+  const commandContext = resolveCommandContext(args);
+  requireArg(args.runner, "--runner");
+  const configuredRunner = resolveRunnerConfiguration(commandContext, args);
+  const sharedArgs = applyRunnerHierarchyDefaults(args, configuredRunner.profile);
+  const taskIdentity = {
+    taskId: requireIdentityArg(args.taskId, "--task-id"),
+    epoch: requireIdentityArg(args.epoch, "--epoch"),
+    scope: requireIdentityArg(args.scope, "--scope"),
+  };
+  assertValidIntakeForPacket(commandContext, taskIdentity, "orchestrate");
+  validateLiveConsoleSelection(args);
+
+  const taskScopePrefixes = assertMachineRunnableScope(taskIdentity, commandContext.targetCwd);
+  const jobs = readOrchestrationJobs(args.jobsFile, commandContext.invocationCwd);
+  const preparedJobs = prepareOrchestrationJobs(jobs, taskScopePrefixes, commandContext.targetCwd);
+  const packets = preparedJobs.map(({ job }) => {
+    const packet = requireAssignmentPacket({
+      ...sharedArgs,
+      role: job.role,
+      scope: job.ownerScope,
+      assignment: job.assignment,
+      expectedOutput: job.expectedOutput,
+    }, commandContext);
+    packet.jobId = job.id;
+    packet.taskScope = taskIdentity.scope;
+    return packet;
+  });
+
+  const liveConsoleDisabled = Boolean(args.noLiveConsole || args.silent);
+  const runnerOptions = prepareOrchestrationRunnerExecution(
+    commandContext,
+    args,
+    configuredRunner,
+    preparedJobs.flatMap(({ prefixes }) => prefixes),
+  );
+  const useOwnedLiveConsole = !liveConsoleDisabled && !args.liveConsoleUrl;
+  let ownedLiveConsole = null;
+  if (useOwnedLiveConsole) {
+    const port = parsePort(args.liveConsolePort ?? "0", "--live-console-port");
+    ownedLiveConsole = await startLiveConsole({ port });
+    runnerOptions.liveConsoleUrl = ownedLiveConsole.eventsUrl;
+    console.log(`ok live_console_viewer_url: ${ownedLiveConsole.viewerUrl}`);
+    console.log(`ok live_console_ingest_url: ${ownedLiveConsole.eventsUrl}`);
+    console.log("ok live_console_owned: true");
+  }
+
+  try {
+    for (const packet of packets) {
+      appendRunnerEntry(commandContext, "Issued Assignments", renderAssignmentPacket(packet));
+    }
+
+    const results = await Promise.all(packets.map(async (packet) => {
+      try {
+        return await runWithRunner(commandContext, packet, runnerOptions);
+      } catch (error) {
+        return orchestrationFailureResult(packet, runnerOptions, error);
+      }
+    }));
+
+    for (const result of results) {
+      appendRunnerEntry(commandContext, "Process Runner Results", renderRunnerResult(result));
+      console.log(`ok job_id: ${result.jobId}`);
+      console.log(`ok runner: ${result.runner}`);
+      console.log(`ok spawned: ${result.spawned}`);
+      console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
+      console.log(`ok status: ${result.status}`);
+      console.log(`${result.liveConsoleStatus === "failed" ? "warn" : "ok"} live_console_status: ${result.liveConsoleStatus}`);
+      if (result.liveConsoleRunId !== "none") console.log(`ok live_console_run_id: ${result.liveConsoleRunId}`);
+      if (result.liveConsoleFailure !== "none") console.log(`warn live_console_failure: ${result.liveConsoleFailure}`);
+      if (result.summary) console.log(`ok summary: ${result.summary}`);
+    }
+
+    if (ownedLiveConsole) {
+      console.log("ok live_console_run_finished: true");
+      console.log("ok live_console_stop: press Ctrl-C");
+      const stopSignal = await waitForStopSignal();
+      console.log(`ok live_console_stop_signal: ${stopSignal}`);
+    }
+
+    const failed = results.find((result) => result.status !== "completed" || result.liveConsoleStatus === "failed");
+    if (failed) {
+      const failure = failed.liveConsoleStatus === "failed" ? failed.liveConsoleFailure : failed.failure;
+      throw new CliError(`orchestrated job ${failed.jobId} failed: ${failure}`, failed.exitCode || 1);
+    }
+    console.log(`ok orchestrated_jobs: ${results.length}`);
+  } finally {
+    await ownedLiveConsole?.close();
+  }
+}
+
+function validateLiveConsoleSelection(args) {
+  const liveConsoleDisabled = Boolean(args.noLiveConsole || args.silent);
+  if (args.liveConsole && args.liveConsoleUrl) {
+    throw new CliError("--live-console and --live-console-url are mutually exclusive", 1);
+  }
+  if (liveConsoleDisabled && (args.liveConsole || args.liveConsoleUrl || args.liveConsolePort !== undefined)) {
+    throw new CliError("--no-live-console/--silent cannot be combined with Live Console options", 1);
+  }
+  if (args.liveConsolePort !== undefined && args.liveConsoleUrl) {
+    throw new CliError("--live-console-port and --live-console-url are mutually exclusive", 1);
+  }
+}
+
+function readOrchestrationJobs(jobsFile, invocationCwd) {
+  const requestedPath = requireArg(jobsFile, "--jobs-file");
+  const jobsPath = path.resolve(invocationCwd, requestedPath);
+  let document;
+  try {
+    document = JSON.parse(readFileSync(jobsPath, "utf8"));
+  } catch (error) {
+    throw new CliError(`invalid --jobs-file ${jobsPath}: ${singleLine(error.message)}`, 1);
+  }
+  if (!document || typeof document !== "object" || Array.isArray(document) || document.version !== 1) {
+    throw new CliError("--jobs-file must contain a JSON document with version: 1", 1);
+  }
+  if (!Array.isArray(document.jobs) || document.jobs.length === 0) {
+    throw new CliError("--jobs-file version 1 requires a non-empty jobs array", 1);
+  }
+
+  const ids = new Set();
+  return document.jobs.map((rawJob, index) => {
+    if (!rawJob || typeof rawJob !== "object" || Array.isArray(rawJob)) {
+      throw new CliError(`--jobs-file jobs[${index}] must be an object`, 1);
+    }
+    const job = {
+      id: requireIdentityArg(rawJob.id, `jobs[${index}].id`),
+      role: requireRole(rawJob.role),
+      ownerScope: requireIdentityArg(rawJob.ownerScope, `jobs[${index}].ownerScope`),
+      assignment: singleLine(requireArg(rawJob.assignment, `jobs[${index}].assignment`)),
+      expectedOutput: singleLine(requireArg(rawJob.expectedOutput, `jobs[${index}].expectedOutput`)),
+    };
+    if (ids.has(job.id)) throw new CliError(`--jobs-file job id must be unique: ${job.id}`, 1);
+    ids.add(job.id);
+    return job;
+  });
+}
+
+function prepareOrchestrationJobs(jobs, taskScopePrefixes, cwd) {
+  const prepared = jobs.map((job) => {
+    const prefixes = assertMachineRunnableScope({ scope: job.ownerScope }, cwd);
+    const outsideTaskScope = prefixes.filter((prefix) => !scopePrefixIsContained(prefix, taskScopePrefixes));
+    if (outsideTaskScope.length) {
+      throw new CliError(
+        `orchestrate ownerScope for job ${job.id} is outside top-level task scope: ${job.ownerScope}`,
+        1,
+      );
+    }
+    return { job, prefixes: minimizeScopePrefixes(prefixes) };
+  });
+
+  for (let leftIndex = 0; leftIndex < prepared.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < prepared.length; rightIndex += 1) {
+      const left = prepared[leftIndex];
+      const right = prepared[rightIndex];
+      if (scopePrefixSetsOverlap(left.prefixes, right.prefixes)) {
+        throw new CliError(
+          `orchestrate ownerScope values overlap: ${left.job.id} (${left.job.ownerScope}) and ${right.job.id} (${right.job.ownerScope})`,
+          1,
+        );
+      }
+    }
+  }
+  return prepared;
+}
+
+function scopePrefixIsContained(prefix, allowedPrefixes) {
+  return allowedPrefixes.some((allowed) => allowed === "." || prefix === allowed || prefix.startsWith(`${allowed}/`));
+}
+
+function scopePrefixSetsOverlap(left, right) {
+  return left.some((leftPrefix) => right.some((rightPrefix) => (
+    scopePrefixIsContained(leftPrefix, [rightPrefix]) || scopePrefixIsContained(rightPrefix, [leftPrefix])
+  )));
+}
+
+function minimizeScopePrefixes(prefixes) {
+  const unique = [...new Set(prefixes)];
+  return unique.filter((prefix) => !unique.some((other) => other !== prefix && scopePrefixIsContained(prefix, [other])));
+}
+
+function prepareOrchestrationRunnerExecution(commandContext, args, configuredRunner, groupScopePrefixes) {
+  const timeoutMs = parsePositiveInt(
+    args.timeoutMs || configuredRunner.profile.timeoutMs || DEFAULT_RUNNER_TIMEOUT_MS,
+    "--timeout-ms",
+  );
+  const scopePrefixes = minimizeScopePrefixes(groupScopePrefixes);
+  assertNoDirtyPathsOutsideMachineScope(commandContext.targetCwd, "orchestrated ownerScope union", scopePrefixes);
+  const liveConsoleUrl = args.liveConsoleUrl
+    ? resolveLiveConsoleIngestUrl(args.liveConsoleUrl).toString()
+    : null;
+  return { ...configuredRunner, timeoutMs, scopePrefixes, liveConsoleUrl };
+}
+
+function orchestrationFailureResult(packet, options, error) {
+  return {
+    type: "process-runner-result",
+    timestamp: new Date().toISOString(),
+    jobId: packet.jobId,
+    role: packet.role,
+    taskId: packet.taskId,
+    epoch: packet.epoch,
+    scope: packet.scope,
+    featureProfile: packet.featureProfile,
+    workType: packet.workType,
+    hierarchyFields: packet.hierarchyFields,
+    hierarchyPermissionFields: packet.hierarchyPermissionFields,
+    supervisionTimingFields: packet.supervisionTimingFields,
+    invocationCwd: packet.invocationCwd,
+    targetCwd: packet.targetCwd,
+    runner: options.runner,
+    runnerCommand: options.profile.command,
+    runnerResultSource: options.profile.result,
+    runnerStreamFormat: options.profile.stream,
+    runnerConfigSources: options.sourcePaths,
+    status: "failed",
+    spawned: false,
+    exitCode: null,
+    signal: "none",
+    timeoutMs: options.timeoutMs,
+    assignment: packet.assignment,
+    expectedOutput: packet.expectedOutput,
+    summary: singleLine(error.message),
+    finalizationReferences: "none",
+    failure: singleLine(error.message),
+    liveConsoleStatus: options.liveConsoleUrl ? "failed" : "disabled",
+    liveConsoleRunId: "none",
+    liveConsoleFailure: options.liveConsoleUrl ? singleLine(error.message) : "none",
+    metacognitiveGate: packet.metacognitiveGate,
+    metacognitiveFields: {},
+  };
+}
+
 function resolveRunnerConfiguration(commandContext, args) {
   const runner = singleLine(args.runner);
   const state = resolveWorkflowState(commandContext.targetCwd);
@@ -554,7 +788,7 @@ async function runConfiguredCli(commandContext, packet, options) {
   const beforePaths = readGitChangedPaths(cwd);
   const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
   const liveConsoleRunId = options.liveConsoleUrl
-    ? `${packet.taskId}:${packet.epoch}:${randomUUID()}`
+    ? `${packet.taskId}:${packet.epoch}${packet.jobId ? `:${packet.jobId}` : ""}:${randomUUID()}`
     : "none";
   const publisher = options.liveConsoleUrl
     ? createLiveConsolePublisher({ url: options.liveConsoleUrl, runId: liveConsoleRunId })
@@ -651,6 +885,7 @@ function normalizeRunnerResult(packet, context) {
   return {
     type: "process-runner-result",
     timestamp: new Date().toISOString(),
+    jobId: packet.jobId,
     role: packet.role,
     taskId: packet.taskId,
     epoch: packet.epoch,
@@ -729,10 +964,10 @@ function renderRunnerPrompt(packet) {
   return `You are a CLI Agent Runner child worker. Follow this assignment exactly and return concise worker-result material only.
 
 role: ${packet.role}
-task_id: ${packet.taskId}
+${packet.jobId ? `job_id: ${packet.jobId}\n` : ""}task_id: ${packet.taskId}
 epoch: ${packet.epoch}
 scope: ${packet.scope}
-feature_profile: ${featureProfileId(packet)}
+${packet.taskScope ? `task_scope: ${packet.taskScope}\nowner_scope: ${packet.scope}\n` : ""}feature_profile: ${featureProfileId(packet)}
 work_type: ${workTypeId(packet)}
 invocation_cwd: ${packet.invocationCwd}
 target_cwd: ${packet.targetCwd}
@@ -743,7 +978,7 @@ Boundaries:
 - Treat the process cwd as the target/jobsite cwd: ${packet.targetCwd}.
 - Do not treat the invocation cwd as the workflow state root unless it is the same as the target/jobsite cwd.
 - Stay inside the declared scope.
-- ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
+${packet.jobId ? `- You own only owner_scope ${packet.scope}; do not edit or claim work outside that owner scope.\n` : ""}- ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
 - Preserve unrelated user or worker changes.
 - Do not commit.
 - Do not edit ~/.codex/plugins/cache directly.
@@ -2140,11 +2375,11 @@ function renderAssignmentPacket(packet) {
 
 - type: assignment
 - role: ${packet.role}
-- status: ${packet.status}
+${packet.jobId ? `- job_id: ${packet.jobId}\n` : ""}- status: ${packet.status}
 - task_id: ${packet.taskId}
 - epoch: ${packet.epoch}
 - scope: ${packet.scope}
-- feature_profile: ${featureProfileId(packet)}
+${packet.taskScope ? `- task_scope: ${packet.taskScope}\n- owner_scope: ${packet.scope}\n` : ""}- feature_profile: ${featureProfileId(packet)}
 - work_type: ${workTypeId(packet)}
 - invocation_cwd: ${packet.invocationCwd}
 - target_cwd: ${packet.targetCwd}
@@ -2245,7 +2480,7 @@ function renderRunnerResult(result) {
 
 - type: ${result.type}
 - role: ${result.role}
-- status: completed
+${result.jobId ? `- job_id: ${result.jobId}\n` : ""}- status: completed
 - task_id: ${result.taskId}
 - epoch: ${result.epoch}
 - scope: ${result.scope}
@@ -2257,7 +2492,7 @@ function renderRunnerResult(result) {
 
 - type: ${result.type}
 - role: ${result.role}
-- status: ${result.status}
+${result.jobId ? `- job_id: ${result.jobId}\n` : ""}- status: ${result.status}
 - task_id: ${result.taskId}
 - epoch: ${result.epoch}
 - scope: ${result.scope}
@@ -4037,7 +4272,8 @@ Usage:
   node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
   node bin/cli-agent-runner.mjs collect [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] --status <status> --lifecycle-disposition state_retired|continuation_expected [--cancel-reason <allowed-reason>] [--findings <text>] [--changed-files <text>] [--verification <text>] [--blockers <text>] [--assumptions <text>] [--next <text>] [--finalization-references <typed-refs>] [--expected-outcome <text>] [--actual-result <text>] [--reproduction-or-evidence <text>] [--failure-point <text>] [--hypothesis-branches <text>] [--source-of-truth-boundary <text>] [--plugin-contract-boundary <text>] [--generated-artifact-boundary <text>] [--before-context-effects <text>] [--after-context-effects <text>] [--cross-feature-consequences <text>] [--root-cause <text>] [--fix-summary <text>] [--verification-evidence <text>] [--skipped-checks <text>] [--unresolved-risks <text>] [--next-investigation <text>]
   node bin/cli-agent-runner.mjs finalize [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--contract-coverage required] --decision-coverage <text> --completion-coverage <text> --source-spec-coverage <text>
-  node bin/cli-agent-runner.mjs run|orchestrate [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs live-console [--port <0-65535>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
   node bin/cli-agent-runner.mjs normalize-debugging-integrity [--cwd <path>] [--target-cwd <path>] [--execute]
@@ -4050,8 +4286,9 @@ Commands:
   assign   Record a scoped specialist assignment in .cli-agent-runner/runner.md.
   collect  Record a worker-result-collection packet and its workflow-state-only lifecycle disposition. Completed collection does not require task-wide D/C/source-spec coverage. state_retired requires exactly one allowed --cancel-reason; continuation_expected rejects --cancel-reason.
   finalize Validate complete active D/C/source-spec coverage and record a distinct task-finalization packet. Every ID segment and source_spec_coverage requires one accepted typed reference.
-  run/orchestrate
-           Record an assignment and orchestration skeleton without --runner. With --runner <id>, start and retain an owned Live Console by default, resolve the configured CLI profile, stream it asynchronously, and record normalized results. --live-console remains an optional explicit spelling, --live-console-url reuses a prestarted console, and only --no-live-console or --silent disables the console.
+  run      Execute one configured CLI worker. Without --runner, record the legacy single-assignment skeleton.
+  orchestrate
+           Validate independent version-1 jobs, append every assignment, launch all jobs in parallel with one runner and Live Console, then append results in jobs-file order. Owner scopes must be inside the top-level task scope and pairwise non-overlapping.
   live-console
            Start the built-in token-protected loopback viewer server for Codex IAB and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments
