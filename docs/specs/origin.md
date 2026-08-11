@@ -34,6 +34,7 @@ runtime state:
 - workflow state: `.cli-agent-runner/`
 - migration script: `scripts/migrate-legacy-cli-agent-runner-state.mjs`
 
-The initial independent release intentionally preserves the historical
-`codex-cli` provider behavior. Additional CLI providers are future work and are
-not part of this extraction.
+The initial independent release intentionally preserved the historical
+`codex-cli` provider behavior. The current source subsequently added Claude,
+Grok, and user-defined runner profiles through a shared JSON registry; that
+later feature does not change the extraction provenance recorded above.

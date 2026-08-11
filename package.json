@@ -1,8 +1,8 @@
 {
   "name": "cli-agent-runner",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Independent Codex CLI worker runner extracted from the last verified process-runner implementation.",
+  "description": "Scoped Codex, Claude, Grok, and user-configured CLI worker runner.",
   "type": "module",
   "bin": {
     "cli-agent-runner": "./bin/cli-agent-runner.mjs"
