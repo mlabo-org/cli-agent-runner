@@ -20,7 +20,6 @@ test("bundled registry exposes Codex, Claude, and Grok through one profile schem
   try {
     const registry = loadRunnerRegistry({
       invocationCwd: fixture.root,
-      stateDir: fixture.stateDir,
       environment: isolatedEnvironment(fixture.configHome),
     });
 
@@ -40,11 +39,11 @@ test("bundled registry exposes Codex, Claude, and Grok through one profile schem
   }
 });
 
-test("jobsite and explicit JSON can add and override runners without source edits", () => {
+test("trusted user and explicit JSON can add and override runners without source edits", () => {
   const fixture = makeRegistryFixture();
   const explicitPath = path.join(fixture.root, "explicit-runners.json");
   try {
-    writeJson(path.join(fixture.stateDir, "runners.json"), {
+    writeJson(path.join(fixture.configHome, "cli-agent-runner", "runners.json"), {
       version: 1,
       runners: {
         "custom-cli": {
@@ -55,6 +54,20 @@ test("jobsite and explicit JSON can add and override runners without source edit
         },
         "codex-cli": {
           command: "/opt/custom/codex",
+        },
+      },
+    });
+    writeJson(path.join(fixture.stateDir, "runners.json"), {
+      version: 1,
+      runners: {
+        "jobsite-only": {
+          command: "must-not-load",
+          args: ["{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+        },
+        "codex-cli": {
+          command: "must-not-override",
         },
       },
     });
@@ -71,7 +84,6 @@ test("jobsite and explicit JSON can add and override runners without source edit
     const resolved = resolveConfiguredRunner({
       runnerId: "custom-cli",
       invocationCwd: fixture.root,
-      stateDir: fixture.stateDir,
       explicitConfigPath: explicitPath,
       environment: isolatedEnvironment(fixture.configHome),
     });
@@ -81,11 +93,11 @@ test("jobsite and explicit JSON can add and override runners without source edit
 
     const registry = loadRunnerRegistry({
       invocationCwd: fixture.root,
-      stateDir: fixture.stateDir,
       environment: isolatedEnvironment(fixture.configHome),
     });
     assert.equal(registry.runners["codex-cli"].command, "/opt/custom/codex");
     assert.equal(registry.runners["codex-cli"].result, "output-file");
+    assert.equal(registry.runners["jobsite-only"], undefined);
   } finally {
     fixture.cleanup();
   }
@@ -126,7 +138,7 @@ test("invalid custom config is rejected before runner state append or process la
   const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
   try {
     intake(repo, "invalid-runner-config");
-    writeJson(path.join(repo, ".cli-agent-runner", "runners.json"), {
+    writeJson(path.join(configHome, "cli-agent-runner", "runners.json"), {
       version: 1,
       runners: {
         "broken-cli": {
@@ -156,7 +168,7 @@ test("invalid runner hierarchy defaults are rejected before runner state append 
   const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
   try {
     intake(repo, "invalid-hierarchy-default");
-    writeJson(path.join(repo, ".cli-agent-runner", "runners.json"), {
+    writeJson(path.join(configHome, "cli-agent-runner", "runners.json"), {
       version: 1,
       runners: {
         "broken-cli": {
@@ -345,7 +357,7 @@ test("custom runner profile hierarchy defaults use the same override guard", () 
   try {
     intake(repo, "custom-profile-default-guard");
     installFakeRunner(fakeBin, "custom-agent");
-    writeJson(path.join(repo, ".cli-agent-runner", "runners.json"), {
+    writeJson(path.join(configHome, "cli-agent-runner", "runners.json"), {
       version: 1,
       runners: {
         "custom-default": {
@@ -386,7 +398,7 @@ test("custom runner profile hierarchy defaults use the same override guard", () 
   }
 });
 
-test("jobsite JSON launches an arbitrary CLI through the shared runner path", () => {
+test("jobsite workflow state cannot launch an arbitrary CLI", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-custom-"));
   const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
@@ -411,10 +423,10 @@ test("jobsite JSON launches an arbitrary CLI through the shared runner path", ()
       PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
       CLI_AGENT_RUNNER_CAPTURE: path.join(fakeBin, "args.json"),
     });
-    assert.equal(result.status, 0, result.stderr);
-    const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
-    assert.match(runner, /runner: my-cli/);
-    assert.match(runner, /summary: fake configured runner completed/);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unknown runner: my-cli/);
+    assert.equal(existsSync(path.join(fakeBin, "args.json")), false);
+    assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });

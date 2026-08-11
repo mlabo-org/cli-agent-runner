@@ -794,11 +794,9 @@ function orchestrationFailureResult(packet, options, error) {
 
 function resolveRunnerConfiguration(commandContext, args) {
   const runner = singleLine(args.runner);
-  const state = resolveWorkflowState(commandContext.targetCwd);
   const configured = resolveConfiguredRunner({
     runnerId: runner,
     invocationCwd: commandContext.invocationCwd,
-    stateDir: state.stateDir,
     explicitConfigPath: args.runnerConfig,
   });
   return { ...configured, runner };
@@ -2463,7 +2461,16 @@ function applyScopeGuard(result, packet, cwd, beforePaths, scopePrefixes = null)
   }
   if (prefixes.includes(".")) return result;
 
-  const afterPaths = readGitChangedPaths(cwd);
+  let afterPaths;
+  try {
+    afterPaths = readGitChangedPaths(cwd);
+  } catch (error) {
+    return {
+      ...result,
+      status: "failed",
+      failure: singleLine(error.message),
+    };
+  }
   const changedAfterRunner = afterPaths.filter((changedPath) => !beforePaths.includes(changedPath));
   const outsideScope = changedAfterRunner.filter((changedPath) => !isPathAllowedByScope(changedPath, prefixes));
   if (!outsideScope.length) return result;
@@ -4484,8 +4491,9 @@ function readGitChangedPaths(cwd) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     return parsePorcelainZPaths(output).sort();
-  } catch {
-    return [];
+  } catch (error) {
+    const detail = singleLine(error.stderr || error.message || "unknown Git error");
+    throw new CliError(`scope guard could not inspect Git changes: ${detail}`, 1);
   }
 }
 
@@ -4574,7 +4582,7 @@ State:
   --work-type documentation suppresses keyword/path gate inference for that command only; it does not replace debug/root-cause gates and cannot downgrade existing gate-required workflow state.
   Hierarchy fields are the parent-owned maximum permission ceiling; they do not require the assigned worker to delegate. A worker with remaining_depth greater than zero decides whether descendants materially help. Any runner profile may declare defaultHierarchyDepth. Replacing that default with explicit hierarchy fields requires --hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary and is rejected before state append or process launch otherwise. Bundled grok-cli defaults to hierarchy_mode one_level, max_depth 1, depth 0, and remaining_depth 1; bundled Codex and Claude retain the workflow zero-depth default. Supervision timing defaults are heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
   Bundled runner ids are codex-cli, claude-cli, and grok-cli. Additional ids can be added through runner JSON without source edits.
-  Runner config precedence is bundled defaults, user config, jobsite .cli-agent-runner/runners.json, CLI_AGENT_RUNNER_CONFIG, then --runner-config.
+  Runner config precedence is bundled defaults, user config, CLI_AGENT_RUNNER_CONFIG, then --runner-config. Jobsite workflow state is never an executable config source.
   With --runner <id>, --scope must be machine-checkable before runner.md is appended or the process launches.
   Runner machine scope grammar is "scope:v1 all" for the whole repo, or "scope:v1 paths=README.md,bin/cli-agent-runner.mjs,tests/" for comma-separated repo-relative prefixes.
   Absolute paths in "scope:v1 paths=" are accepted only when they resolve inside the target cwd and are normalized to repo-relative prefixes.

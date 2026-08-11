@@ -8,11 +8,12 @@ Definitions are merged in this order, with later fields overriding earlier field
 
 1. Bundled `config/runners.default.json`.
 2. `$XDG_CONFIG_HOME/cli-agent-runner/runners.json`, or `~/.config/cli-agent-runner/runners.json` when `XDG_CONFIG_HOME` is unset.
-3. The jobsite's `<git-root>/.cli-agent-runner/runners.json`.
-4. The path named by `CLI_AGENT_RUNNER_CONFIG`.
-5. The path passed with `--runner-config <path>`.
+3. The path named by `CLI_AGENT_RUNNER_CONFIG`.
+4. The path passed with `--runner-config <path>`.
 
 Relative paths supplied by the environment variable or flag resolve from the invocation working directory. Missing optional files are ignored. A missing explicitly named file, invalid JSON, invalid profile, or unknown runner ID fails before `runner.md` is appended and before a child process starts.
+
+The jobsite's `.cli-agent-runner/` directory is workflow state only and is never a runner configuration layer. Runner JSON selects a local executable and is therefore executable configuration: review it before use and keep user, environment-selected, and flag-selected config outside paths that a child worker can write.
 
 ## File format
 
@@ -45,7 +46,7 @@ Each runner supports these fields:
 - `defaultHierarchyDepth`: optional integer from `0` through `8`. It defines the parent-owned maximum descendant permission when the invocation omits hierarchy fields; `0` explicitly declares that the model profile may not create descendants, `1` permits direct children only, and larger values produce a bounded `n_level` hierarchy. The assigned worker decides whether to use any permitted depth. Model suitability belongs here rather than in an unrecorded per-run parent decision. Explicit hierarchy fields that replace this profile value require `--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary`; the CLI rejects an unreasoned replacement before assignment append or process launch.
 - `description`: optional single-line description.
 
-Available argument placeholders are `{prompt}`, `{cwd}`, and `{output_file}`. The child process always runs with the jobsite as its process working directory, inherits the current environment, and remains subject to the existing machine-checkable scope guard.
+Available argument placeholders are `{prompt}`, `{cwd}`, and `{output_file}`. The child process always runs with the jobsite as its process working directory and inherits the current environment. The machine-checkable scope guard fails closed when Git inspection is unavailable, but it remains a post-run Git change detector rather than an operating-system write sandbox; ignored paths and paths outside the repository require the selected provider's permission model or a separate sandbox.
 
 ## Running a profile
 

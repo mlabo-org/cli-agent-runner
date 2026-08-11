@@ -252,8 +252,9 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      process executor must not hard-code provider branches.
    - Users may add new runner IDs or override standard profile fields through
      versioned runner JSON. Configuration precedence is bundled defaults, user
-     config, jobsite `.cli-agent-runner/runners.json`,
-     `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`.
+     config, `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`. Jobsite
+     `.cli-agent-runner/` remains workflow state and must never be loaded as an
+     executable configuration source.
    - A resolved profile consists of a direct executable, an argument array,
      prompt transport, result source, stream format, optional timeout, and
      optional validated `defaultHierarchyDepth` permission ceiling.
@@ -262,7 +263,8 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      `lib/runner-registry.mjs` and its contract tests.
    - Runner commands are spawned asynchronously without a shell, always use the
      jobsite as process cwd, inherit the current environment, and share the
-     existing timeout, bounded-output, scope-guard, and normalized
+     existing timeout, bounded-output, fail-closed post-run Git scope check,
+     and normalized
      `process-runner-result` path.
    - The local delegation broker is profile-generic. Explicit
      `--delegation-mode local_orchestrator` supplies one direct-child level when
