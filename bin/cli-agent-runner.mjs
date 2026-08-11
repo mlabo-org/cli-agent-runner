@@ -426,7 +426,13 @@ function finalize(args) {
 
 async function run(args) {
   const commandContext = resolveCommandContext(args);
-  const packet = requireAssignmentPacket(args, commandContext);
+  const configuredRunner = args.runner
+    ? resolveRunnerConfiguration(commandContext, args)
+    : null;
+  const packet = requireAssignmentPacket(
+    applyRunnerHierarchyDefaults(args, configuredRunner?.profile),
+    commandContext,
+  );
   assertValidIntakeForPacket(commandContext, packet, args.command || "run");
 
   const liveConsoleDisabled = Boolean(args.noLiveConsole || args.silent);
@@ -441,7 +447,7 @@ async function run(args) {
   }
 
   if (args.runner) {
-    const runnerOptions = prepareRunnerExecution(commandContext, packet, args);
+    const runnerOptions = prepareRunnerExecution(commandContext, packet, args, configuredRunner);
     const useOwnedLiveConsole = !liveConsoleDisabled && !args.liveConsoleUrl;
     let ownedLiveConsole = null;
     if (useOwnedLiveConsole) {
@@ -505,7 +511,7 @@ async function run(args) {
   console.log("ok note: real process orchestration is deferred; runner recorded the scoped assignment and skeleton only");
 }
 
-function prepareRunnerExecution(commandContext, packet, args) {
+function resolveRunnerConfiguration(commandContext, args) {
   const runner = singleLine(args.runner);
   const state = resolveWorkflowState(commandContext.targetCwd);
   const configured = resolveConfiguredRunner({
@@ -514,6 +520,11 @@ function prepareRunnerExecution(commandContext, packet, args) {
     stateDir: state.stateDir,
     explicitConfigPath: args.runnerConfig,
   });
+  return { ...configured, runner };
+}
+
+function prepareRunnerExecution(commandContext, packet, args, resolvedRunner = null) {
+  const configured = resolvedRunner || resolveRunnerConfiguration(commandContext, args);
   const timeoutMs = parsePositiveInt(
     args.timeoutMs || configured.profile.timeoutMs || DEFAULT_RUNNER_TIMEOUT_MS,
     "--timeout-ms",
@@ -523,7 +534,7 @@ function prepareRunnerExecution(commandContext, packet, args) {
   const liveConsoleUrl = args.liveConsoleUrl
     ? resolveLiveConsoleIngestUrl(args.liveConsoleUrl).toString()
     : null;
-  return { ...configured, runner, timeoutMs, scopePrefixes, liveConsoleUrl };
+  return { ...configured, timeoutMs, scopePrefixes, liveConsoleUrl };
 }
 
 async function runWithRunner(commandContext, packet, options) {
@@ -3906,6 +3917,26 @@ function resolveHierarchyFields(args = {}) {
   return fields;
 }
 
+function applyRunnerHierarchyDefaults(args, profile) {
+  const explicitHierarchy = ["hierarchyMode", "maxDepth", "depth", "remainingDepth"]
+    .some((field) => args[field] !== undefined);
+  if (explicitHierarchy || profile?.defaultHierarchyDepth === undefined) return args;
+
+  const maxDepth = profile.defaultHierarchyDepth;
+  const hierarchyMode = maxDepth === 0
+    ? "none"
+    : maxDepth === 1
+      ? "one_level"
+      : "n_level";
+  return {
+    ...args,
+    hierarchyMode,
+    maxDepth: String(maxDepth),
+    depth: "0",
+    remainingDepth: String(maxDepth),
+  };
+}
+
 function resolveSupervisionTimingFields(args = {}) {
   const fields = {
     heartbeat_interval: args.heartbeatInterval === undefined ? DEFAULT_SUPERVISION_TIMING_FIELDS.heartbeat_interval : singleLine(args.heartbeatInterval),
@@ -4063,7 +4094,7 @@ State:
   Optional --work-type is semantic command metadata. Known ids: ${knownWorkTypeIds().join(", ")}.
   --work-type auto preserves keyword/path inference. --work-type source-change and --work-type debug force the metacognitive gate for that command.
   --work-type documentation suppresses keyword/path gate inference for that command only; it does not replace debug/root-cause gates and cannot downgrade existing gate-required workflow state.
-  Optional hierarchy and supervision timing flags are packet metadata. Defaults: hierarchy_mode none, max_depth/depth/remaining_depth 0, heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
+  Optional hierarchy and supervision timing flags are packet metadata. Bundled grok-cli runs that omit all hierarchy flags default to hierarchy_mode one_level, max_depth 1, depth 0, and remaining_depth 1. Other bundled runners default to hierarchy_mode none with zero depth. Any explicit hierarchy flag overrides a runner-profile default. Supervision timing defaults are heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
   Bundled runner ids are codex-cli, claude-cli, and grok-cli. Additional ids can be added through runner JSON without source edits.
   Runner config precedence is bundled defaults, user config, jobsite .cli-agent-runner/runners.json, CLI_AGENT_RUNNER_CONFIG, then --runner-config.
   With --runner <id>, --scope must be machine-checkable before runner.md is appended or the process launches.

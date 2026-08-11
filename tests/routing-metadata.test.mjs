@@ -57,14 +57,17 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "Codex, Claude, And Grok CLI Worker Launch",
     "User-Configured CLI Runner Registry",
     "stdout/stderr And Final-Message Capture",
-      "Default-On Prestarted Token-Protected IAB Live Console",
+    "Default-On Prestarted Token-Protected IAB Live Console",
     "Provider-Neutral Text And JSON Event Streaming",
+    "Bounded Runner-Profile Descendant Defaults",
     "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
     "Machine-Checkable Scope Guard",
   ]);
   assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
   assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
   assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
+  assert.match(manifest.interface.longDescription, /profiles declare a bounded descendant default that explicit hierarchy flags override/i);
+  assert.match(manifest.interface.longDescription, /Bundled Grok runs default to direct children only/i);
   assert.match(manifest.interface.longDescription, /starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation/i);
   assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
   assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
@@ -103,6 +106,9 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
 
   assert.equal(defaultRunners.version, 1);
   assert.deepEqual(Object.keys(defaultRunners.runners).sort(), ["claude-cli", "codex-cli", "grok-cli"]);
+  assert.equal(defaultRunners.runners["grok-cli"].defaultHierarchyDepth, 1);
+  assert.equal(defaultRunners.runners["codex-cli"].defaultHierarchyDepth, undefined);
+  assert.equal(defaultRunners.runners["claude-cli"].defaultHierarchyDepth, undefined);
 });
 
 test("agents metadata advertises the multi-CLI Live Console route", () => {

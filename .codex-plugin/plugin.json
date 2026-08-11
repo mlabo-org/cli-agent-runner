@@ -21,7 +21,7 @@
   "interface": {
     "displayName": "CLI Agent Runner",
     "shortDescription": "Run scoped CLI workers with a default-on IAB Live Console.",
-    "longDescription": "CLI Agent Runner is an explicit process-runner workflow for scoped CLI workers. It bundles Codex, Claude, and Grok profiles, accepts additional or overridden profiles from runner JSON, invokes every profile through one validated command-and-arguments path, starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation, reuses it for later runners, streams emitted stdout/stderr or structured messages into it, enforces a machine-checkable repository scope, and records execution, parent artifact-acceptance, and result-contract outcomes independently in a process-runner-result packet under .cli-agent-runner. Direct runner commands also own a console by default; only explicit silent or no-console selection disables it. It does not replace generic coding or ordinary official-subagent routing.",
+    "longDescription": "CLI Agent Runner is an explicit process-runner workflow for scoped CLI workers. It bundles Codex, Claude, and Grok profiles, accepts additional or overridden profiles from runner JSON, invokes every profile through one validated command-and-arguments path, and lets profiles declare a bounded descendant default that explicit hierarchy flags override. Bundled Grok runs default to direct children only; Codex and Claude retain zero descendant depth. It starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation, reuses it for later runners, streams emitted stdout/stderr or structured messages into it, enforces a machine-checkable repository scope, and records execution, parent artifact-acceptance, and result-contract outcomes independently in a process-runner-result packet under .cli-agent-runner. Direct runner commands also own a console by default; only explicit silent or no-console selection disables it. It does not replace generic coding or ordinary official-subagent routing.",
     "developerName": "suzukimakoto",
     "category": "Productivity",
     "capabilities": [
@@ -30,6 +30,7 @@
       "stdout/stderr And Final-Message Capture",
       "Default-On Prestarted Token-Protected IAB Live Console",
       "Provider-Neutral Text And JSON Event Streaming",
+      "Bounded Runner-Profile Descendant Defaults",
       "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
       "Machine-Checkable Scope Guard"
     ],

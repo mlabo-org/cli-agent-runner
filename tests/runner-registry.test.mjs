@@ -25,6 +25,9 @@ test("bundled registry exposes Codex, Claude, and Grok through one profile schem
     });
 
     assert.deepEqual(Object.keys(registry.runners).sort(), ["claude-cli", "codex-cli", "grok-cli"]);
+    assert.equal(registry.runners["grok-cli"].defaultHierarchyDepth, 1);
+    assert.equal(registry.runners["codex-cli"].defaultHierarchyDepth, undefined);
+    assert.equal(registry.runners["claude-cli"].defaultHierarchyDepth, undefined);
     for (const profile of Object.values(registry.runners)) {
       assert.equal(typeof profile.command, "string");
       assert.ok(Array.isArray(profile.args));
@@ -148,6 +151,37 @@ test("invalid custom config is rejected before runner state append or process la
   }
 });
 
+test("invalid runner hierarchy defaults are rejected before runner state append or process launch", () => {
+  const repo = makeTempGitRepo();
+  const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+  try {
+    intake(repo, "invalid-hierarchy-default");
+    writeJson(path.join(repo, ".cli-agent-runner", "runners.json"), {
+      version: 1,
+      runners: {
+        "broken-cli": {
+          command: "never-launched",
+          args: ["{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+          defaultHierarchyDepth: 9,
+        },
+      },
+    });
+
+    const result = runWorker(repo, "invalid-hierarchy-default", "broken-cli", {
+      ...isolatedEnvironment(configHome),
+      PATH: process.env.PATH || "",
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /defaultHierarchyDepth must be an integer from 0 to 8/);
+    assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(configHome, { recursive: true, force: true });
+  }
+});
+
 test("bundled Claude and Grok profiles launch headlessly and normalize stdout", () => {
   for (const [runnerId, executable, expectedFlag] of [
     ["claude-cli", "claude", "--print"],
@@ -173,7 +207,17 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
         assert.ok(args.includes("streaming-messages-json"));
         assert.ok(args.includes("--include-partial-messages"));
       }
-      assert.ok(args.some((argument) => argument.includes("You are a CLI Agent Runner child worker")));
+      const prompt = args.find((argument) => argument.includes("You are a CLI Agent Runner child worker"));
+      assert.ok(prompt);
+      if (runnerId === "grok-cli") {
+        assert.match(prompt, /- hierarchy_mode: one_level/);
+        assert.match(prompt, /- max_depth: 1/);
+        assert.match(prompt, /- depth: 0/);
+        assert.match(prompt, /- remaining_depth: 1/);
+      } else {
+        assert.match(prompt, /- hierarchy_mode: none/);
+        assert.match(prompt, /- remaining_depth: 0/);
+      }
       const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
       assert.match(runner, new RegExp(`runner: ${runnerId}`));
       assert.match(runner, new RegExp(`runner_command: ${executable}`));
@@ -184,6 +228,37 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
       rmSync(fakeBin, { recursive: true, force: true });
       rmSync(configHome, { recursive: true, force: true });
     }
+  }
+});
+
+test("explicit hierarchy flags override the bundled Grok profile default", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-grok-"));
+  const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+  const capturePath = path.join(fakeBin, "args.json");
+  try {
+    intake(repo, "grok-explicit-no-descendants");
+    installFakeRunner(fakeBin, "grok");
+    const result = runWorker(repo, "grok-explicit-no-descendants", "grok-cli", {
+      ...isolatedEnvironment(configHome),
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+      CLI_AGENT_RUNNER_CAPTURE: capturePath,
+    }, ["--hierarchy-mode", "none"]);
+
+    assert.equal(result.status, 0, result.stderr);
+    const args = JSON.parse(readFileSync(capturePath, "utf8"));
+    const prompt = args.find((argument) => argument.includes("You are a CLI Agent Runner child worker"));
+    assert.ok(prompt);
+    assert.match(prompt, /- hierarchy_mode: none/);
+    assert.match(prompt, /- max_depth: 0/);
+    assert.match(prompt, /- remaining_depth: 0/);
+    const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
+    assert.match(runner, /runner: grok-cli/);
+    assert.match(runner, /hierarchy_mode: none/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+    rmSync(configHome, { recursive: true, force: true });
   }
 });
 
@@ -269,7 +344,7 @@ function intake(repo, taskId) {
   assert.equal(result.status, 0, result.stderr);
 }
 
-function runWorker(repo, taskId, runnerId, environment) {
+function runWorker(repo, taskId, runnerId, environment, extraArgs = []) {
   return runCli([
     "run",
     "--target-cwd",
@@ -291,6 +366,7 @@ function runWorker(repo, taskId, runnerId, environment) {
     "--runner",
     runnerId,
     "--no-live-console",
+    ...extraArgs,
   ], { env: environment });
 }
 
