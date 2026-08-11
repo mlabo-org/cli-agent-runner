@@ -1138,23 +1138,25 @@ process.stdout.write("fake codex completed\\n");
     assert.match(run.stdout, /ok feature_profile: runner\.scope-guard/);
     const runner = readState(repo, "runner.md");
     assert.match(runner, /type: assignment[\s\S]*feature_profile: runner\.scope-guard/);
-    assert.match(runner, /type: process-runner-result[\s\S]*feature_profile: runner\.scope-guard/);
-    assert.match(runner, /type: process-runner-result[\s\S]*supervision_contract: Subagent Supervision Contract/);
-    assert.match(runner, /type: process-runner-result[\s\S]*hierarchy_mode: none/);
-    assert.match(runner, /type: process-runner-result[\s\S]*hard_timeout: PT120M/);
-    assert.match(runner, /summary: runner prompt included feature_profile: runner\.scope-guard and supervision/);
+    const processResult = runner.slice(runner.lastIndexOf("- type: process-runner-result"));
+    assert.match(processResult, /status: completed/);
+    assert.match(processResult, /summary: runner prompt included feature_profile: runner\.scope-guard and supervision/);
+    assert.deepEqual(
+      [...processResult.matchAll(/^- ([^:]+):/gm)].map((match) => match[1]),
+      ["type", "role", "status", "task_id", "epoch", "scope", "runner", "exit_code", "summary"],
+    );
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });
   }
 });
 
-test("verify rejects completed codex-cli runner results until worker result is collected", () => {
+test("completed codex-cli runner result is terminal without follow-up collection", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
   try {
     intake(repo, {
-      task: "Probe uncollected completed runner result",
+      task: "Probe terminal completed runner result",
       taskId: "uncollected-runner",
       epoch: "e1",
       scope: "README.md",
@@ -1187,49 +1189,16 @@ test("verify rejects completed codex-cli runner results until worker result is c
     });
 
     assert.equal(run.status, 0, run.stderr);
-    let runner = readState(repo, "runner.md");
-    assert.match(runner, /type: process-runner-result[\s\S]*status: completed/);
-    assert.match(runner, /type: process-runner-result[\s\S]*artifact_status: parent_acceptance_pending/);
-    assert.match(runner, /type: process-runner-result[\s\S]*result_contract_status: not_required/);
-    assert.match(runner, /type: process-runner-result[\s\S]*result_contract_failure: none/);
+    const runner = readState(repo, "runner.md");
+    const processResult = runner.slice(runner.lastIndexOf("- type: process-runner-result"));
+    assert.match(processResult, /status: completed/);
+    assert.match(processResult, /runner: codex-cli/);
+    assert.match(processResult, /exit_code: 0/);
+    assert.deepEqual(
+      [...processResult.matchAll(/^- ([^:]+):/gm)].map((match) => match[1]),
+      ["type", "role", "status", "task_id", "epoch", "scope", "runner", "exit_code", "summary"],
+    );
     assert.doesNotMatch(runner, /type: parent-integration/);
-
-    const uncollected = runCli(["verify-assignments", "--target-cwd", repo]);
-    assert.notEqual(uncollected.status, 0);
-    assert.match(uncollected.stdout, /uncollected completed runner result missing follow-up worker result collection/);
-
-    const collect = runCli([
-      "collect",
-      "--target-cwd",
-      repo,
-      "--role",
-      "Implementer",
-      "--task-id",
-      "uncollected-runner",
-      "--epoch",
-      "e1",
-      "--scope",
-      "README.md",
-      "--work-type",
-      "documentation",
-      "--status",
-      "completed",
-      "--lifecycle-disposition",
-      "state_retired",
-      "--cancel-reason",
-      "completed_retire",
-      "--findings",
-      "runner result was collected",
-      "--verification",
-      "parent integration recorded",
-      "--next",
-      "record completed workflow state_retired",
-      ...contractCoverageArgs("uncollected-runner"),
-    ]);
-    assert.equal(collect.status, 0, collect.stderr);
-
-    runner = readState(repo, "runner.md");
-    assert.match(runner, /type: worker-result-collection[\s\S]*status: completed/);
     assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
     assert.equal(runCli(["doctor", "--target-cwd", repo]).status, 0);
   } finally {
@@ -1722,7 +1691,7 @@ test("normalize runner debugging integrity stops modern packets before legacy ru
   }
 });
 
-test("normalize runner metacognitive gate does not accept packet fields as preamble", () => {
+test("normalize does not synthesize a metacognitive gate for source-change packets", () => {
   const repo = makeTempGitRepo();
   try {
     intake(repo, {
@@ -1754,14 +1723,13 @@ test("normalize runner metacognitive gate does not accept packet fields as pream
 
     const runner = readState(repo, "runner.md");
     assert.doesNotMatch(runner, /^## Meta-Cognitive Debug\/Repair Gate$/m);
-    assert.match(runner, /^- metacognitive_gate_required: true$/m);
+    assert.doesNotMatch(runner, /^- metacognitive_gate_required: true$/m);
 
     const normalized = runCli(["normalize-debugging-integrity", "--target-cwd", repo, "--execute"]);
     assert.equal(normalized.status, 0, normalized.stderr);
-    assert.match(normalized.stdout, /Updated: runner\.md/);
 
     const nextRunner = readState(repo, "runner.md");
-    assert.match(nextRunner, /^## Meta-Cognitive Debug\/Repair Gate$/m);
+    assert.doesNotMatch(nextRunner, /^- metacognitive_gate_required: true$/m);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -1810,8 +1778,6 @@ process.stdout.write("fake codex completed\\n");
     const runner = readState(repo, "runner.md");
     assert.match(runner, /type: process-runner-result/);
     assert.match(runner, /status: failed/);
-    assert.match(runner, /artifact_status: indeterminate/);
-    assert.match(runner, /result_contract_status: not_required/);
     assert.match(runner, /failure: runner changed files outside scope allowed\.txt: outside\.txt/);
   } finally {
     rmSync(repo, { recursive: true, force: true });

@@ -60,7 +60,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "Default-On Prestarted Token-Protected IAB Live Console",
     "Provider-Neutral Text And JSON Event Streaming",
     "Protected Runner-Profile Delegation Ceilings",
-    "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
+    "Terminal Minimal Result For Successful Runs",
     "Machine-Checkable Scope Guard",
   ]);
   assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
@@ -74,7 +74,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
   assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
   assert.match(manifest.interface.longDescription, /streams emitted stdout\/stderr or structured messages/i);
-  assert.match(manifest.interface.longDescription, /records execution, parent artifact-acceptance, and result-contract outcomes independently/i);
+  assert.match(manifest.interface.longDescription, /exit-zero in-scope run records one minimal completed process result and stops/i);
   assert.ok(
     manifest.interface.defaultPrompt.every((prompt) =>
       /CLI Agent Runner|\.cli-agent-runner|process-runner-result/.test(prompt),
@@ -120,8 +120,8 @@ test("agents metadata advertises the multi-CLI Live Console route", () => {
 
   assert.match(shortDescription, /IAB Live Console/i);
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
-  assert.match(defaultPrompt, /open and keep its IAB Live Console before project work/i);
+  assert.match(defaultPrompt, /open its IAB Live Console before project work/i);
   assert.match(defaultPrompt, /launch a scoped Grok or CLI worker/i);
-  assert.match(defaultPrompt, /preserve profile delegation ceilings unless a reasoned override is authorized/i);
-  assert.match(defaultPrompt, /record execution\/artifact\/result state/i);
+  assert.match(defaultPrompt, /keep profile delegation ceilings unless an authorized override applies/i);
+  assert.match(defaultPrompt, /stop after a minimal completed result on exit zero/i);
 });

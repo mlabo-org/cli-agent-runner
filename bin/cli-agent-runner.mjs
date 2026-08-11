@@ -34,9 +34,9 @@ const CODING_CONDUCT_RULES = [
 const CODING_CONDUCT_CONTRACT = CODING_CONDUCT_RULES.join(" ");
 const METACOGNITIVE_GATE_NAME = "Meta-Cognitive Debug/Repair Gate";
 const METACOGNITIVE_GATE_CONTRACT =
-  "For gate-required source-change/debug/repair/SOT/plugin-contract/generated-artifact inconsistency work, explicitly capture before/after context effects, cross-feature consequences, root cause, fix, verification evidence, skipped checks, unresolved risks, and next investigation.";
+  "For actual debug/repair/SOT/plugin-contract/generated-artifact inconsistency work, explicitly capture root cause, fix, verification evidence, and relevant context impact before claiming the repair complete.";
 const METACOGNITIVE_GATE_COMPLETION_PROMPT =
-  "Assignment and skeleton packets expose this schema only; completed worker-result-collection or process-runner-result packets must fill every listed field with actual evidence.";
+  "Explicit debug/repair collections must fill every listed field with actual evidence.";
 const METACOGNITIVE_PRE_GATE_BLOCKER =
   "pre-metacognitive-gate packet claimed completion without the required metacognitive result fields";
 const METACOGNITIVE_PRE_GATE_NEXT =
@@ -51,9 +51,6 @@ const CONTRACT_COVERAGE_FIELDS = [
 const WORKER_RESULT_COLLECTION_TYPE = "worker-result-collection";
 const TASK_FINALIZATION_TYPE = "task-finalization";
 const FINALIZATION_REFERENCES_FIELD = "finalization_references";
-const ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING = "parent_acceptance_pending";
-const ARTIFACT_STATUS_INDETERMINATE = "indeterminate";
-const RESULT_CONTRACT_STATUSES = ["conformant", "nonconformant", "not_required", "not_evaluated"];
 const CONTRACT_COVERAGE_TYPED_REFERENCE_FORMS =
   "file:<path>, path:<path>, command:<command> exit:<integer>, artifact:<ref>, packet:<collected-ref>, role:<collected-role>, collected-packet:<ref>, collected-role:<role>, or test:<name> result:<pass|fail|integer>";
 const CONTRACT_COVERAGE_CONTRACT =
@@ -166,7 +163,7 @@ const DEFAULT_FEATURE_PROFILE = "none";
 const WORK_TYPE_GUIDANCE = {
   auto: "Infer gate classification from task text, packet text, and path-like scope. This preserves existing behavior.",
   documentation: "Semantic metadata for docs-only work. Suppresses keyword/path metacognitive gate inference for this command, but does not downgrade gate-required workflow state.",
-  "source-change": "Semantic metadata for source/config/test/canonical editing. Forces the metacognitive source-change gate for this command.",
+  "source-change": "Semantic metadata for ordinary source/config/test/canonical editing. It does not activate the debug/repair gate by itself.",
   debug: "Semantic metadata for debugging or failure-correction work. Forces the metacognitive debug/root-cause gate for this command.",
 };
 const DEFAULT_WORK_TYPE = "auto";
@@ -192,7 +189,6 @@ const METACOGNITIVE_GATE_FIELDS = [
 ];
 
 const METACOGNITIVE_TRIGGER_PATTERNS = [
-  ["source change", /\b(?:source[-\s]?change|source[-\s]?edit|source[-\s]?modification|source[-\s]?patch|code[-\s]?change|code[-\s]?edit|code[-\s]?modification|implementation[-\s]?change|implementation[-\s]?edit|config(?:uration)?[-\s]?(?:change|edit|update)|test[-\s]?(?:change|edit|update)|refactor(?:ing)?|canonical[-\s]?(?:doc|document|file)[-\s]?(?:change|edit|update)|source[-\s]change[-\s]metacognitive[-\s]baseline)\b|(?:ソース|コード|実装|設定|テスト|正本)(?:修正|変更|更新|編集)|リファクタ/i],
   ["debug", /\bdebug(?:ging)?\b|原因調査/i],
   ["repair", /\brepair\b|不具合|期待結果が出ない/i],
   ["bug fix", /\bbug[-\s]?fix(?:es)?\b|\bfix(?:ing)?\s+(?:a\s+)?bug\b/i],
@@ -480,11 +476,6 @@ async function run(args) {
       console.log(`ok spawned: ${result.spawned}`);
       console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
       console.log(`ok status: ${result.status}`);
-      console.log(`ok artifact_status: ${result.artifactStatus}`);
-      console.log(`${result.resultContractStatus === "nonconformant" ? "warn" : "ok"} result_contract_status: ${result.resultContractStatus}`);
-      if (result.resultContractStatus === "nonconformant") {
-        console.log(`warn result_contract_failure: ${result.resultContractFailure}`);
-      }
       console.log(`ok feature_profile: ${featureProfileId(packet)}`);
       console.log(`ok work_type: ${workTypeId(packet)}`);
       console.log(`${result.liveConsoleStatus === "failed" ? "warn" : "ok"} live_console_status: ${result.liveConsoleStatus}`);
@@ -616,8 +607,6 @@ async function runConfiguredCli(commandContext, packet, options) {
           data: {
             status: guarded.status,
             exitCode: guarded.exitCode,
-            artifactStatus: guarded.artifactStatus,
-            resultContractStatus: guarded.resultContractStatus,
           },
         });
         await publisher.drain();
@@ -657,23 +646,6 @@ function normalizeRunnerResult(packet, context) {
   });
   const baseStatus = !result.error && exitCode === 0 ? "completed" : "failed";
   const metacognitiveFields = extractMetacognitiveFields(summarySource);
-  const missingMetacognitiveFields =
-    packet.metacognitiveGate?.required && baseStatus === "completed"
-      ? missingCompletedMetacognitiveFields(metacognitiveFields)
-      : [];
-  const artifactStatus = baseStatus === "completed"
-    ? ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING
-    : ARTIFACT_STATUS_INDETERMINATE;
-  const resultContractStatus = baseStatus !== "completed"
-    ? "not_evaluated"
-    : !packet.metacognitiveGate?.required
-      ? "not_required"
-      : missingMetacognitiveFields.length
-        ? "nonconformant"
-        : "conformant";
-  const resultContractFailure = missingMetacognitiveFields.length
-    ? `runner result contract missing metacognitive gate fields: ${missingMetacognitiveFields.join(", ")}`
-    : "none";
   const failure = runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand });
 
   return {
@@ -696,9 +668,6 @@ function normalizeRunnerResult(packet, context) {
     runnerStreamFormat,
     runnerConfigSources,
     status: baseStatus,
-    artifactStatus,
-    resultContractStatus,
-    resultContractFailure,
     spawned: !unavailable,
     exitCode,
     signal: result.signal || "none",
@@ -1719,6 +1688,7 @@ function normalizeRunnerPacketMetacognitiveGate(section, workflowGate) {
   if (!["assignment", WORKER_RESULT_COLLECTION_TYPE, "parent-integration", "process-orchestration-skeleton", "process-runner-result"].includes(type)) {
     return section;
   }
+  if (type === "process-runner-result") return section;
   const packetGate = runnerPacketMetacognitiveRequired(section, workflowGate);
   if (!packetGate.required) return section;
 
@@ -1726,16 +1696,7 @@ function normalizeRunnerPacketMetacognitiveGate(section, workflowGate) {
   const status = normalizeStatus(getFieldValue(next, "status"));
   if (isCompletionPacketType(type) && isCompletionStatus(status)) {
     const missing = missingCompletedMetacognitiveFields(readMetacognitiveFieldsFromSection(next));
-    if (type === "process-runner-result") {
-      next = upsertFieldBeforeLifecycle(next, "artifact_status", ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING, { replace: true });
-      next = upsertFieldBeforeLifecycle(next, "result_contract_status", missing.length ? "nonconformant" : "conformant", { replace: true });
-      next = upsertFieldBeforeLifecycle(
-        next,
-        "result_contract_failure",
-        missing.length ? `runner result contract missing metacognitive gate fields: ${missing.join(", ")}` : "none",
-        { replace: true },
-      );
-    } else if (missing.length) {
+    if (missing.length) {
       next = markPreGateCompletionUnresolved(next, type);
     }
   }
@@ -1757,6 +1718,7 @@ function normalizeRunnerPacketContractCoverage(section, context = {}) {
   if (!["assignment", WORKER_RESULT_COLLECTION_TYPE, "parent-integration", "process-orchestration-skeleton", "process-runner-result"].includes(type)) {
     return section;
   }
+  if (type === "process-runner-result") return section;
   if (!context?.taskId || runnerPacketUsesLegacySchema(section)) return section;
   return ensureContractCoverageGateSchemaInSection(section, context);
 }
@@ -2047,7 +2009,6 @@ function applyScopeGuard(result, packet, cwd, beforePaths, scopePrefixes = null)
     return {
       ...result,
       status: "failed",
-      artifactStatus: ARTIFACT_STATUS_INDETERMINATE,
       failure: `runner scope is not machine-checkable: ${packet.scope}`,
     };
   }
@@ -2061,7 +2022,6 @@ function applyScopeGuard(result, packet, cwd, beforePaths, scopePrefixes = null)
   return {
     ...result,
     status: "failed",
-    artifactStatus: ARTIFACT_STATUS_INDETERMINATE,
     failure: `runner changed files outside scope ${packet.scope}: ${outsideScope.join(", ")}`,
   };
 }
@@ -2280,14 +2240,24 @@ ${renderMetacognitiveGatePacketSchema(packet.metacognitiveGate)}
 }
 
 function renderRunnerResult(result) {
+  if (result.status === "completed") {
+    return `### ${result.timestamp} ${result.role} ${result.taskId}
+
+- type: ${result.type}
+- role: ${result.role}
+- status: completed
+- task_id: ${result.taskId}
+- epoch: ${result.epoch}
+- scope: ${result.scope}
+- runner: ${result.runner}
+- exit_code: ${formatExitCode(result.exitCode)}
+- summary: ${result.summary || "none"}`;
+  }
   return `### ${result.timestamp} ${result.role} ${result.taskId}
 
 - type: ${result.type}
 - role: ${result.role}
 - status: ${result.status}
-- artifact_status: ${result.artifactStatus}
-- result_contract_status: ${result.resultContractStatus}
-- result_contract_failure: ${result.resultContractFailure}
 - task_id: ${result.taskId}
 - epoch: ${result.epoch}
 - scope: ${result.scope}
@@ -2492,16 +2462,12 @@ function validateRoleAssignments(text, workflowGate = { required: false }) {
 
 function validateRunnerPackets(text, workflowGate = { required: false }, contractCoverage = { decisionIds: [], completionIds: [] }) {
   const sections = getModernRunnerPacketSections(text);
-  const workerCollectionSections = sections.filter((section) =>
-    [WORKER_RESULT_COLLECTION_TYPE, "parent-integration"].includes(getFieldValue(section, "type"))
-  );
   const invalidPackets = [];
   const invalidSupervisionPackets = [];
   const invalidCodingConductPackets = [];
   const invalidMetacognitivePackets = [];
   const invalidContractCoveragePackets = [];
   const invalidLifecyclePackets = [];
-  const uncollectedCompletedRunnerPackets = [];
   let unknownLegacyLifecyclePackets = 0;
   let checked = 0;
 
@@ -2578,73 +2544,37 @@ function validateRunnerPackets(text, workflowGate = { required: false }, contrac
       }
     }
     if (type === "process-runner-result") {
-      for (const field of ["status", "runner", "spawned", "exit_code", "summary", "failure", "debugging_integrity", "lifecycle"]) {
+      const completedProcessResult = isCompletionStatus(getFieldValue(section, "status"));
+      const requiredFields = completedProcessResult
+        ? ["status", "runner", "exit_code", "summary"]
+        : ["status", "runner", "spawned", "exit_code", "summary", "failure", "debugging_integrity", "lifecycle"];
+      for (const field of requiredFields) {
         if (!getFieldValue(section, field)) {
           invalidPackets.push(`${section.split("\n")[0].replace(/^### /, "")}.${field}`);
         }
       }
-      if (isCurrentWorkflowPacket(section, workflowGate)) {
-        const artifactStatus = getFieldValue(section, "artifact_status");
-        const resultContractStatus = getFieldValue(section, "result_contract_status");
-        const resultContractFailure = getFieldValue(section, "result_contract_failure");
-        if (![ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING, ARTIFACT_STATUS_INDETERMINATE].includes(artifactStatus)) {
-          invalidPackets.push(`${packetLabel(section)}.artifact_status`);
-        }
-        if (!RESULT_CONTRACT_STATUSES.includes(resultContractStatus)) {
-          invalidPackets.push(`${packetLabel(section)}.result_contract_status`);
-        }
-        if (!resultContractFailure) {
-          invalidPackets.push(`${packetLabel(section)}.result_contract_failure`);
-        }
-        if (isCompletionStatus(getFieldValue(section, "status")) && artifactStatus !== ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING) {
-          invalidPackets.push(`${packetLabel(section)}.artifact_status must be ${ARTIFACT_STATUS_PARENT_ACCEPTANCE_PENDING} for completed execution`);
-        }
-        if (resultContractStatus === "nonconformant" && isMetacognitiveNoEvidenceValue(resultContractFailure)) {
-          invalidPackets.push(`${packetLabel(section)}.result_contract_failure`);
-        }
-        if (resultContractStatus !== "nonconformant" && resultContractFailure !== "none") {
-          invalidPackets.push(`${packetLabel(section)}.result_contract_failure must be none when result contract is ${resultContractStatus}`);
-        }
-        const processResultGate = runnerPacketMetacognitiveRequired(section, workflowGate);
-        if (
-          processResultGate.required
-          && isCompletionStatus(getFieldValue(section, "status"))
-          && !["conformant", "nonconformant"].includes(resultContractStatus)
-        ) {
-          invalidPackets.push(`${packetLabel(section)}.result_contract_status must evaluate the required result contract`);
-        }
-      }
-      if (
-        isCurrentWorkflowPacket(section, workflowGate)
-        && isCompletionStatus(getFieldValue(section, "status"))
-        && !hasMatchingWorkerCollection(section, workerCollectionSections)
-      ) {
-        uncollectedCompletedRunnerPackets.push(`${packetLabel(section)}.${WORKER_RESULT_COLLECTION_TYPE}`);
-      }
     }
 
-    if (runnerPacketRequiresSupervision(section)) {
+    const completedProcessResult = type === "process-runner-result" && isCompletionStatus(getFieldValue(section, "status"));
+    if (!completedProcessResult && runnerPacketRequiresSupervision(section)) {
       const supervision = validateSupervisionContractFields(section);
       for (const missing of supervision.missing) invalidSupervisionPackets.push(`${packetLabel(section)}.${missing}`);
     }
 
-    if (type !== TASK_FINALIZATION_TYPE && (!runnerPacketUsesLegacySchema(section) || hasAnyCodingConductField(section))) {
+    if (!completedProcessResult && type !== TASK_FINALIZATION_TYPE && (!runnerPacketUsesLegacySchema(section) || hasAnyCodingConductField(section))) {
       const conduct = validateCodingConductFields(section);
       for (const missing of conduct.missing) invalidCodingConductPackets.push(`${packetLabel(section)}.${missing}`);
     }
 
     const packetGate = runnerPacketMetacognitiveRequired(section, workflowGate);
-    if (type !== TASK_FINALIZATION_TYPE && packetGate.required) {
+    if (!completedProcessResult && type !== TASK_FINALIZATION_TYPE && packetGate.required) {
       const gateValidation = validateMetacognitiveGateText(section);
       if (!gateValidation.valid) {
         invalidMetacognitivePackets.push(`${packetLabel(section)}.${gateValidation.missing.join("+")}`);
       }
 
       const status = normalizeStatus(getFieldValue(section, "status"));
-      const nonconformantProcessResult = type === "process-runner-result"
-        && isCurrentWorkflowPacket(section, workflowGate)
-        && getFieldValue(section, "result_contract_status") === "nonconformant";
-      if (isCompletionPacketType(type) && isCompletionStatus(status) && !nonconformantProcessResult) {
+      if (isCompletionPacketType(type) && isCompletionStatus(status)) {
         const missing = missingCompletedMetacognitiveFields(readMetacognitiveFieldsFromSection(section));
         for (const field of missing) invalidMetacognitivePackets.push(`${packetLabel(section)}.${field}`);
       }
@@ -2662,7 +2592,6 @@ function validateRunnerPackets(text, workflowGate = { required: false }, contrac
     && invalidMetacognitivePackets.length === 0
     && invalidContractCoveragePackets.length === 0
     && invalidLifecyclePackets.length === 0
-    && uncollectedCompletedRunnerPackets.length === 0
   ) {
     const results = [["ok", `runner packets valid (${checked} checked)`]];
     if (unknownLegacyLifecyclePackets > 0) {
@@ -2692,12 +2621,6 @@ function validateRunnerPackets(text, workflowGate = { required: false }, contrac
   }
   if (invalidLifecyclePackets.length) {
     results.push(["warn", `missing or invalid lifecycle runner packet fields: ${invalidLifecyclePackets.join(", ")}`]);
-  }
-  if (uncollectedCompletedRunnerPackets.length) {
-    results.push([
-      "warn",
-      `uncollected completed runner result missing follow-up worker result collection: ${uncollectedCompletedRunnerPackets.join(", ")}`,
-    ]);
   }
   return { results, fatal: true };
 }
@@ -2768,29 +2691,6 @@ function isCurrentWorkflowPacket(section, workflowGate) {
   return true;
 }
 
-function hasMatchingWorkerCollection(runnerSection, workerCollectionSections) {
-  return workerCollectionSections.some((collectionSection) =>
-    sameRunnerIdentity(runnerSection, collectionSection)
-    && packetTimestamp(collectionSection) >= packetTimestamp(runnerSection)
-  );
-}
-
-function sameRunnerIdentity(leftSection, rightSection) {
-  for (const field of ["role", "task_id", "epoch", "scope"]) {
-    if (getFieldValue(leftSection, field) !== getFieldValue(rightSection, field)) return false;
-  }
-  return featureProfileField(leftSection) === featureProfileField(rightSection)
-    && workTypeField(leftSection) === workTypeField(rightSection);
-}
-
-function featureProfileField(section) {
-  return getFieldValue(section, "feature_profile") || DEFAULT_FEATURE_PROFILE;
-}
-
-function workTypeField(section) {
-  return getFieldValue(section, "work_type") || DEFAULT_WORK_TYPE;
-}
-
 function packetTimestamp(section) {
   const match = /^###\s+(\S+)/m.exec(section);
   return match ? match[1] : "";
@@ -2812,11 +2712,8 @@ function getModernRunnerPacketSections(text) {
 
 function classifyMetacognitiveGate(parts, workType = { id: DEFAULT_WORK_TYPE }) {
   const workTypeIdValue = typeof workType === "string" ? workType : workType?.id || DEFAULT_WORK_TYPE;
-  if (workTypeIdValue === "documentation") {
+  if (workTypeIdValue === "documentation" || workTypeIdValue === "source-change") {
     return { required: false, triggers: [] };
-  }
-  if (workTypeIdValue === "source-change") {
-    return { required: true, triggers: ["work_type: source-change"] };
   }
   if (workTypeIdValue === "debug") {
     return { required: true, triggers: ["work_type: debug"] };
@@ -2829,18 +2726,10 @@ function classifyMetacognitiveGate(parts, workType = { id: DEFAULT_WORK_TYPE }) 
   for (const [label, pattern] of METACOGNITIVE_TRIGGER_PATTERNS) {
     if (pattern.test(text)) triggers.push(label);
   }
-  if (hasSourceTestConfigPathScope(parts?.scope)) triggers.push("source/test/config path scope");
   return {
     required: triggers.length > 0,
     triggers: [...new Set(triggers)],
   };
-}
-
-function hasSourceTestConfigPathScope(scope) {
-  const text = String(scope || "");
-  return /(?:^|[\s,;])(?:\.?\/)?(?:bin|src|lib|app|apps|packages|server|client|components|pages|routes|tests?|__tests__|spec|scripts|config|configs|\.github\/workflows)\/[^\s,;]+/i.test(text)
-    || /(?:^|[\s,;])(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|tsconfig(?:\.[^/\s,;]+)?\.json|jsconfig\.json|vite\.config\.[cm]?[jt]s|next\.config\.[cm]?[jt]s|jest\.config\.[cm]?[jt]s|vitest\.config\.[cm]?[jt]s|eslint\.config\.[cm]?[jt]s|\.eslintrc(?:\.[a-z]+)?|\.prettierrc(?:\.[a-z]+)?|Cargo\.toml|Cargo\.lock|go\.mod|go\.sum|pyproject\.toml|requirements(?:-[^/\s,;]+)?\.txt|uv\.lock|deno\.json|wrangler\.toml)(?=$|[\s,;])/i.test(text)
-    || /(?:^|[\s,;])(?:[A-Za-z0-9_.-]+\/)+[A-Za-z0-9_.-]+\.(?:mjs|cjs|js|jsx|ts|tsx|py|rs|go|rb|java|kt|swift|sh|bash|zsh|json|ya?ml|toml)(?=$|[\s,;])/i.test(text);
 }
 
 function mergeMetacognitiveGates(...gates) {
@@ -2873,7 +2762,9 @@ function readWorkflowMetacognitiveContext(stateDir) {
   const classified = classifyMetacognitiveGate({ task, scope }, workType);
   const gate = mergeMetacognitiveGates(
     classified,
-    declaredRequired ? { required: true, triggers: declaredTriggers.length ? declaredTriggers : ["declared"] } : null,
+    declaredRequired && (classified.required || workType.id === "debug")
+      ? { required: true, triggers: declaredTriggers.length ? declaredTriggers : ["declared"] }
+      : null,
   );
   return {
     ...gate,
@@ -3664,11 +3555,8 @@ function packetLabel(section) {
 }
 
 function renderRunnerLifecycle(result) {
-  if (result.status === "completed" && result.resultContractStatus === "nonconformant") {
-    return "Parent inspects the produced artifacts independently, then collect records acceptance and workflow-state disposition; report-contract nonconformance does not make the process or artifacts failed.";
-  }
   if (result.status === "completed") {
-    return "Parent integrates the completed result, then collect records state_retired or continuation_expected. Process exit is not runtime-thread closure evidence.";
+    return "Completed runner execution is terminal; no follow-up collect, finalize, verify-assignments, or doctor step is required.";
   }
   return "Parent records the failure, timeout, or blocker, then collect records workflow-state disposition. The workflow CLI does not close or reclaim runtime threads.";
 }
@@ -4189,7 +4077,7 @@ State:
   Supervision treats silence before heartbeat deadline as neutral, forbids cancel/interruption/workflow state_retired/replacement of quiet workers during the no-interrupt window, requires workers that are still running at heartbeat_interval to self-report completed/current/blocker/ETA progress, treats explicit completed/blocked/failed results as immediate collect/integrate triggers rather than silence, treats heartbeat as telemetry rather than completion evidence, requires explicit state_retired reasons (${SUPERVISION_RETIRE_CANCEL_REASONS.join(", ")}), and uses missed heartbeat -> soft ping/status request -> grace wait -> stale mark before cancel/replace.
   Optional --feature-profile overlays provide scoped assignment guidance only. Known ids: ${knownFeatureProfileIds().join(", ")}.
   Optional --work-type is semantic command metadata. Known ids: ${knownWorkTypeIds().join(", ")}.
-  --work-type auto preserves keyword/path inference. --work-type source-change and --work-type debug force the metacognitive gate for that command.
+  --work-type auto preserves debug/repair keyword inference. --work-type source-change records ordinary source-work metadata without activating the metacognitive gate; --work-type debug forces it.
   --work-type documentation suppresses keyword/path gate inference for that command only; it does not replace debug/root-cause gates and cannot downgrade existing gate-required workflow state.
   Hierarchy fields are the parent-owned maximum permission ceiling; they do not require the assigned worker to delegate. A worker with remaining_depth greater than zero decides whether descendants materially help. Any runner profile may declare defaultHierarchyDepth. Replacing that default with explicit hierarchy fields requires --hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary and is rejected before state append or process launch otherwise. Bundled grok-cli defaults to hierarchy_mode one_level, max_depth 1, depth 0, and remaining_depth 1; bundled Codex and Claude retain the workflow zero-depth default. Supervision timing defaults are heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
   Bundled runner ids are codex-cli, claude-cli, and grok-cli. Additional ids can be added through runner JSON without source edits.
@@ -4200,7 +4088,7 @@ State:
   Legacy runner scopes remain available only for simple path-only values such as "README.md", "allowed/", "bin/cli-agent-runner.mjs tests/workflow-state.test.mjs", ".", "repo", and "whole repo".
   ${CODING_CONDUCT_GATE_NAME}: ${CODING_CONDUCT_CONTRACT}
   Debug or repair work must identify root cause and verify the intended outcome; log-only, fallback-only, skip-only, failure-output-only, or return-to-main-loop-only changes are not completion.
-  Gate-required source-change/debug/repair/source-of-truth/plugin-contract/generated-artifact inconsistency work also carries ${METACOGNITIVE_GATE_NAME} fields and rejects completed worker collection without them.
+  Explicit debug/repair/source-of-truth/plugin-contract/generated-artifact inconsistency collections carry ${METACOGNITIVE_GATE_NAME} evidence. A successful process runner result is terminal and is not reclassified or blocked by a post-run result-contract gate.
   ${CONTRACT_COVERAGE_GATE_NAME} is enforced by finalize, not collect. Accepted typed references: ${CONTRACT_COVERAGE_TYPED_REFERENCE_FORMS}. Placeholder-only done/checked/ok values are rejected.
 `);
 }
