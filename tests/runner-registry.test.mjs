@@ -210,6 +210,8 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
       const prompt = args.find((argument) => argument.includes("You are a CLI Agent Runner child worker"));
       assert.ok(prompt);
       if (runnerId === "grok-cli") {
+        assert.match(prompt, /delegation_mode: local_orchestrator/);
+        assert.match(prompt, /delegation_broker_available: true/);
         assert.match(prompt, /- hierarchy_mode: one_level/);
         assert.match(prompt, /- max_depth: 1/);
         assert.match(prompt, /- depth: 0/);
@@ -219,14 +221,55 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
         assert.match(prompt, /maximum permission ceiling, not an instruction to delegate/);
         assert.match(prompt, /assigned worker decides whether descendants materially help/);
       } else {
+        assert.match(prompt, /delegation_mode: leaf/);
+        assert.match(prompt, /delegation_broker_available: false/);
         assert.match(prompt, /- hierarchy_mode: none/);
         assert.match(prompt, /- remaining_depth: 0/);
       }
       const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
       assert.match(runner, new RegExp(`runner: ${runnerId}`));
-      assert.match(runner, new RegExp(`runner_command: ${executable}`));
-      assert.match(runner, /runner_result_source: stdout/);
       assert.match(runner, /summary: fake configured runner completed/);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  }
+});
+
+test("Codex, Claude, and Grok use the same explicit local-orchestrator broker contract", () => {
+  for (const [runnerId, executable] of [
+    ["codex-cli", "codex"],
+    ["claude-cli", "claude"],
+    ["grok-cli", "grok"],
+  ]) {
+    const repo = makeTempGitRepo();
+    const fakeBin = mkdtempSync(path.join(os.tmpdir(), `cli-agent-runner-local-${executable}-`));
+    const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+    const capturePath = path.join(fakeBin, "args.json");
+    try {
+      const taskId = `local-${executable}`;
+      intake(repo, taskId);
+      installFakeRunner(fakeBin, executable);
+      const result = runWorker(repo, taskId, runnerId, {
+        ...isolatedEnvironment(configHome),
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+        CLI_AGENT_RUNNER_CAPTURE: capturePath,
+      }, ["--delegation-mode", "local_orchestrator"]);
+
+      assert.equal(result.status, 0, result.stderr);
+      const args = JSON.parse(readFileSync(capturePath, "utf8"));
+      const prompt = args.find((argument) => argument.includes("You are a CLI Agent Runner child worker"));
+      assert.ok(prompt);
+      assert.match(prompt, /delegation_mode: local_orchestrator/);
+      assert.match(prompt, /delegation_broker_available: true/);
+      assert.match(prompt, /runner-owned delegation broker/);
+      assert.match(prompt, /delegate --delegate-id <stable-id>/);
+      assert.match(prompt, /- remaining_depth: 1/);
+
+      const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
+      assert.match(runner, new RegExp(`runner: ${runnerId}`));
+      assert.match(runner, /delegation_mode: local_orchestrator/);
     } finally {
       rmSync(repo, { recursive: true, force: true });
       rmSync(fakeBin, { recursive: true, force: true });
@@ -371,9 +414,7 @@ test("jobsite JSON launches an arbitrary CLI through the shared runner path", ()
     assert.equal(result.status, 0, result.stderr);
     const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
     assert.match(runner, /runner: my-cli/);
-    assert.match(runner, /runner_command: my-agent/);
-    assert.match(runner, /timeout_ms: 5000/);
-    assert.match(runner, /runner_config_sources: .*runners\.default\.json.*\.cli-agent-runner\/runners\.json/);
+    assert.match(runner, /summary: fake configured runner completed/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });

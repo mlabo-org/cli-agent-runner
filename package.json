@@ -1,6 +1,6 @@
 {
   "name": "cli-agent-runner",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "Scoped CLI worker runner with a built-in IAB Live Console.",
   "type": "module",

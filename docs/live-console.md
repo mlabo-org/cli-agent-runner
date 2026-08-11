@@ -49,7 +49,9 @@ Every event is a versioned JSON envelope:
 }
 ```
 
-The primary event types are `run.started`, `runner.output`, `runner.message`, `run.completed`, and `run.failed`. `data` may hold the structured provider event but is otherwise opaque to the transport. Sequence numbers increase within one run.
+The primary event types are `run.started`, `runner.output`, `runner.message`, `run.completed`, and `run.failed`. Runner-brokered descendants use `delegation.started`, `delegation.completed`, and `delegation.failed` on their own run IDs. Their `data` includes `parentRunId`, `depth`, `delegationMode`, and `focusScope`; the viewer marks those runs as children while keeping their provider events independently selectable. Provider-private descendants that bypass the broker are not claimed as tracked lineage.
+
+`data` may also hold the structured provider event but is otherwise opaque to the transport. Sequence numbers increase within one run. A local orchestrator and all of its brokered descendants reuse the same Live Console server; descendant creation never starts a second viewer.
 
 The server binds `127.0.0.1`, generates a random token for each start, and requires that token for ingest, snapshot, and SSE. State is ephemeral and bounded; it is not a replacement for `.cli-agent-runner/runner.md`.
 

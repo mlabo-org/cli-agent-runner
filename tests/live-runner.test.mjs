@@ -194,6 +194,84 @@ test("orchestrate gives parallel jobs distinct Live Console run IDs and event st
   }
 });
 
+test("local_orchestrator delegates through the runner broker and exposes child lineage", async () => {
+  const repo = makeTempGitRepo();
+  const configPath = path.join(repo, "runners.json");
+  const liveConsole = await startLiveConsole({ viewerRoot: path.join(REPO_ROOT, "viewer") });
+  try {
+    intake(repo);
+    writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      runners: {
+        "delegation-fixture": {
+          command: process.execPath,
+          args: ["-e", delegationFixtureProgram(), "{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+          stream: "text",
+        },
+      },
+    }, null, 2));
+
+    const completed = await runCli([
+      "run",
+      "--target-cwd", repo,
+      "--role", "Implementer",
+      "--task-id", "live-fixture",
+      "--epoch", "e1",
+      "--scope", "scope:v1 all",
+      "--work-type", "documentation",
+      "--delegation-mode", "local_orchestrator",
+      "--assignment", "Delegate one bounded internal helper and integrate its result",
+      "--expected-output", "One parent result with one delegated child",
+      "--runner", "delegation-fixture",
+      "--runner-config", configPath,
+      "--live-console-url", liveConsole.viewerUrl,
+    ]);
+
+    assert.equal(completed.status, 0, completed.stderr);
+    const runs = liveConsole.snapshot().runs;
+    assert.equal(runs.length, 2);
+    const parent = runs.find((run) => run.parentRunId === null);
+    const child = runs.find((run) => run.parentRunId !== null);
+    assert.ok(parent);
+    assert.ok(child);
+    assert.equal(child.parentRunId, parent.runId);
+    assert.equal(child.depth, 1);
+    assert.equal(child.delegationMode, "leaf");
+    assert.equal(child.focusScope, "scope:v1 paths=README.md");
+    assert.equal(child.events[0].type, "delegation.started");
+    assert.equal(child.events.at(-1).type, "delegation.completed");
+
+    const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
+    assert.equal([...runner.matchAll(/- type: assignment/g)].length, 2);
+    assert.equal([...runner.matchAll(/- type: process-runner-result/g)].length, 2);
+    assert.match(runner, /- delegation_mode: local_orchestrator/);
+    assert.match(runner, /- delegation_mode: leaf/);
+    assert.match(runner, /- task_scope: scope:v1 all/);
+    assert.match(runner, /- scope: scope:v1 paths=README\.md/);
+    assert.match(runner, /- focus_scope: scope:v1 paths=README\.md/);
+    assert.match(runner, new RegExp(`- parent_run_id: ${escapeRegExp(parent.runId)}`));
+    assert.match(completed.stdout, /live_console_status: connected/);
+  } finally {
+    await liveConsole.close();
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("delegate fails closed outside a runner-owned local orchestrator", async () => {
+  const result = await runCli([
+    "delegate",
+    "--delegate-id", "unowned-child",
+    "--role", "Test Runner",
+    "--focus-scope", "scope:v1 all",
+    "--assignment", "Must not launch",
+    "--expected-output", "No result",
+  ]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /available only inside a runner-owned local_orchestrator process/);
+});
+
 test("run owns Live Console by default and only explicit OFF flags disable it", async () => {
   const repo = makeTempGitRepo();
   const configPath = path.join(repo, "runners.json");
@@ -356,6 +434,35 @@ function fixtureProgram() {
     'setTimeout(() => console.log(JSON.stringify({type:"content_block_delta",delta:{type:"text_delta",text:"progress"}})), 140)',
     'setTimeout(() => console.log(JSON.stringify({type:"message_stop"})), 280)',
   ].join(";");
+}
+
+function delegationFixtureProgram() {
+  const delegateArgs = JSON.stringify([
+    CLI,
+    "delegate",
+    "--delegate-id", "local-child",
+    "--role", "Test Runner",
+    "--focus-scope", "scope:v1 paths=README.md",
+    "--assignment", "Produce one bounded delegated result",
+    "--expected-output", "Delegated fixture result",
+  ]);
+  return [
+    'const { spawnSync } = require("node:child_process")',
+    'const prompt = process.argv[1] || ""',
+    'if (prompt.includes("\\ndelegation_mode: local_orchestrator\\n")) {',
+    `  const delegated = spawnSync(process.execPath, ${delegateArgs}, { encoding: "utf8", env: process.env })`,
+    '  process.stdout.write(delegated.stdout || "")',
+    '  process.stderr.write(delegated.stderr || "")',
+    '  if (delegated.status !== 0) process.exit(delegated.status || 1)',
+    '  console.log("findings: parent integrated delegated result\\nchanged_files: none\\nverification: delegated child completed\\nblockers: none\\nunresolved_assumptions: none\\nfinalization_references: artifact:local-child\\nnext: stop")',
+    '} else {',
+    '  console.log("findings: delegated child completed\\nchanged_files: none\\nverification: fixture child ran\\nblockers: none\\nunresolved_assumptions: none\\nfinalization_references: artifact:local-child\\nnext: return to local orchestrator")',
+    '}',
+  ].join(";");
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function waitFor(predicate, timeoutMs = 2500) {

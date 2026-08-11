@@ -38,10 +38,39 @@ test("Live Console serves its viewer and protects ingest and read APIs with its 
     assert.deepEqual(snapshot.runs, [{
       runId: "run-a",
       status: "running",
+      parentRunId: null,
+      depth: 0,
+      delegationMode: "leaf",
+      focusScope: null,
       events: [event("run-a", 1, { text: "ready" })],
       lastSequence: 1,
       updatedAt: "2026-08-11T00:00:01.000Z",
     }]);
+  } finally {
+    await console.close();
+    fixture.cleanup();
+  }
+});
+
+test("Live Console preserves delegated run lineage from provider-neutral event data", async () => {
+  const fixture = makeViewerFixture();
+  const console = await startLiveConsole({ viewerRoot: fixture.root });
+  try {
+    console.publish(event("child-run", 1, {
+      type: "delegation.started",
+      data: {
+        status: "running",
+        parentRunId: "parent-run",
+        depth: 1,
+        delegationMode: "leaf",
+        focusScope: "scope:v1 paths=tests/",
+      },
+    }));
+    const child = console.snapshot().runs[0];
+    assert.equal(child.parentRunId, "parent-run");
+    assert.equal(child.depth, 1);
+    assert.equal(child.delegationMode, "leaf");
+    assert.equal(child.focusScope, "scope:v1 paths=tests/");
   } finally {
     await console.close();
     fixture.cleanup();

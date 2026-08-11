@@ -1,6 +1,6 @@
 # CLI Agent Runner
 
-CLI Agent Runner launches scoped Codex, Claude, Grok, or JSON-configured command-line workers. `run` launches exactly one worker. `orchestrate` launches the parent-declared independent leaf jobs in one jobs file concurrently. A successful in-scope run or orchestration records its minimal completed result and stops; failure and scope violations remain explicit.
+CLI Agent Runner launches scoped Codex, Claude, Grok, or JSON-configured command-line workers. `run` launches exactly one parent-managed worker; local-orchestrator mode may let that worker broker bounded internal descendants. `orchestrate` launches the parent-declared independent responsibility leaves in one jobs file concurrently. A successful in-scope run or orchestration records its minimal completed result and stops; failure and scope violations remain explicit.
 
 ## Execution Modes
 
@@ -24,6 +24,27 @@ Use `orchestrate --runner <id> --jobs-file <json>` only after the parent has mod
 ```
 
 Choose orchestration when independent workstreams materially reduce total elapsed time. Each job must have a stable handoff and a non-overlapping writable scope. Keep tightly coupled work with one owner, and use one worker when split and merge overhead erases the time saving. A hierarchy permission ceiling only controls a worker's descendants; it never creates or substitutes for the parent's explicit sibling-job dispatch. After a successful orchestration, do not launch a reviewer, validator, or other post-success gate.
+
+## Local Delegation
+
+Assignments have one resolved delegation mode. `leaf` exposes no descendant mechanism. `local_orchestrator` starts a token-protected loopback broker owned by the current runner process. The worker may ask that broker to launch bounded internal helpers, then integrates their results into its own complete output. Each helper inherits task lineage, runner profile, authority scope, supervision, Live Console transport, and a decremented hierarchy depth. Sibling helpers require unique IDs and non-overlapping `focus_scope` values inside that authority; the broker confines their concurrent execution to the collective declared focus set without creating new parent-owned sibling jobs.
+
+The route is provider-neutral. Codex, Claude, Grok, and custom runner profiles receive the same broker command in their assignment prompt. When a profile has no hierarchy default, explicit local-orchestrator selection supplies one direct-child level:
+
+```sh
+node bin/cli-agent-runner.mjs run \
+  --target-cwd /path/to/jobsite \
+  --role Implementer \
+  --task-id local-team \
+  --epoch e1 \
+  --scope "scope:v1 paths=src/,tests/" \
+  --delegation-mode local_orchestrator \
+  --assignment "Own this coherent implementation and delegate only bounded internal helpers" \
+  --expected-output "One integrated implementation result" \
+  --runner codex-cli
+```
+
+The worker-only `delegate` command cannot be used from an ordinary parent shell. It requires the broker environment injected into a running local orchestrator and cannot select another target, task identity, runner, authority scope, or hierarchy ceiling. Brokered child runs appear separately in Live Console with `parentRunId`, depth, and `delegation.started` / `delegation.completed` lifecycle messages. Provider-private descendants that bypass the broker are not represented as tracked lineage.
 
 ## Live Console
 
@@ -51,6 +72,6 @@ A permission, approval, clarification, or target-selection question pauses the t
 
 Console-free operation is explicit-only. Use `--no-live-console` or its `--silent` alias only after the user has asked for silent mode, no console, or Live Console OFF. These flags cannot be combined with positive Live Console options.
 
-Runner-profile hierarchy is a permission ceiling, not a delegation command or sibling-job mechanism. Any profile may declare `defaultHierarchyDepth`; it limits descendants only. The parent alone decides whether to create an `orchestrate` jobs file, using elapsed-time savings and independent ownership rather than hierarchy permission. The bundled Grok profile sets the descendant ceiling to one direct-child level, and those children cannot delegate again. Bundled Codex and Claude profiles retain the no-descendant workflow default. Explicit hierarchy fields that replace a declared profile default require `--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary`; an unreasoned replacement is rejected before assignment state or process launch. Every profile still uses the same provider-neutral runner path; timeout and repository scope-guard failures remain authoritative, while successful execution is terminal.
+Runner-profile hierarchy is a permission ceiling, not a delegation command or sibling-job mechanism. Any profile may declare `defaultHierarchyDepth`; it limits descendants only. The parent alone decides whether to create an `orchestrate` jobs file, using elapsed-time savings and independent ownership rather than hierarchy permission. The bundled Grok profile sets the descendant ceiling to one direct-child level, and those children cannot delegate again. Bundled Codex and Claude profiles retain the no-descendant workflow default until `--delegation-mode local_orchestrator` explicitly selects their provider-neutral one-level broker route. Explicit hierarchy fields that replace a declared profile default require `--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary`; an unreasoned replacement is rejected before assignment state or process launch. Every profile still uses the same provider-neutral runner path; timeout and repository scope-guard failures remain authoritative, while successful execution is terminal.
 
 See [docs/live-console.md](docs/live-console.md) for the event and IAB handoff contract, and [docs/runner-configuration.md](docs/runner-configuration.md) for custom profiles.

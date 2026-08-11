@@ -5,6 +5,11 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  DELEGATION_BROKER_ENV,
+  requestDelegation,
+  startDelegationBroker,
+} from "../lib/delegation-broker.mjs";
 import { createLiveConsolePublisher, resolveLiveConsoleIngestUrl } from "../lib/live-console-client.mjs";
 import { startLiveConsole } from "../lib/live-console.mjs";
 import { runStreamingProcess } from "../lib/process-runner.mjs";
@@ -19,6 +24,9 @@ const STATE_DIR_NAME = ".cli-agent-runner";
 const LEGACY_DOCS_SEGMENTS = ["docs", "codex"];
 const RUNNER_FILE = "runner.md";
 const DEFAULT_RUNNER_TIMEOUT_MS = 120000;
+const DELEGATION_MODES = ["leaf", "local_orchestrator"];
+const DELEGATION_BROKER_CONTRACT =
+  "leaf workers cannot delegate. local_orchestrator workers may request descendants only through the runner-owned delegation broker; the broker inherits task lineage, runner profile, authority scope, supervision, and the finite remaining depth.";
 const SUBAGENT_LIFECYCLE =
   "Parent records workflow-state disposition with collect: state_retired requires exactly one allowed cancel_reason, while continuation_expected records cancel_reason none. This workflow CLI does not interrupt, close, or reclaim runtime threads.";
 const CHILD_RETURN_LIFECYCLE =
@@ -60,7 +68,7 @@ const CONTRACT_COVERAGE_COMPLETION_PROMPT =
 const WORKER_FINALIZATION_REFERENCE_PROMPT =
   `Return concise typed references relevant to this worker result for parent finalization (${CONTRACT_COVERAGE_TYPED_REFERENCE_FORMS}); the parent owns complete D-*/C-*/source-spec coverage.`;
 const NESTED_CLI_AGENT_RUNNER_PREFLIGHT =
-  "Parent already selected CLI Agent Runner for this parent-managed scoped assignment; do not ask `cli-agent-runner を使いますか？ [Y/n]` and do not start an independent nested CLI Agent Runner workflow. Delegate descendants only when finite hierarchy fields grant remaining_depth > 0, keeping the same task_id/epoch/scope lineage and inherited supervision. Proceed directly within the assigned task_id/epoch/scope, but stop before scope expansion, destructive operations, external sending, commits, cache refresh, plugin activation, or unrelated edits.";
+  "Parent already selected CLI Agent Runner for this parent-managed scoped assignment; do not ask `cli-agent-runner を使いますか？ [Y/n]` and do not start an independent nested CLI Agent Runner workflow. A local_orchestrator may delegate only through the runner-owned broker command supplied in its prompt; leaf workers and workers without broker access must not create descendants. Keep the same task_id/epoch/scope lineage and inherited supervision. Proceed directly within the assigned task_id/epoch/scope, but stop before scope expansion, destructive operations, external sending, commits, cache refresh, plugin activation, or unrelated edits.";
 const HIERARCHY_PERMISSION_CONTRACT =
   "Hierarchy fields are the parent-owned maximum permission ceiling, not an instruction to delegate. When remaining_depth is greater than zero, the assigned worker decides whether descendants materially help the assignment; when it is zero, descendants are forbidden.";
 const HIERARCHY_OVERRIDE_REASON_IDS = [
@@ -293,6 +301,7 @@ async function main() {
     else if (args.command === "finalize") finalize(args);
     else if (args.command === "run") await run(args);
     else if (args.command === "orchestrate") await orchestrate(args);
+    else if (args.command === "delegate") await delegate(args);
     else if (args.command === "live-console") await liveConsole(args);
     else fail(`unknown command: ${args.command}`, 1);
   } catch (error) {
@@ -439,8 +448,9 @@ async function run(args) {
   const configuredRunner = args.runner
     ? resolveRunnerConfiguration(commandContext, args)
     : null;
+  const delegationArgs = applyDelegationModeHierarchyDefault(args, configuredRunner?.profile);
   const packet = requireAssignmentPacket(
-    applyRunnerHierarchyDefaults(args, configuredRunner?.profile),
+    applyRunnerHierarchyDefaults(delegationArgs, configuredRunner?.profile),
     commandContext,
   );
   assertValidIntakeForPacket(commandContext, packet, args.command || "run");
@@ -520,7 +530,8 @@ async function orchestrate(args) {
   const commandContext = resolveCommandContext(args);
   requireArg(args.runner, "--runner");
   const configuredRunner = resolveRunnerConfiguration(commandContext, args);
-  const sharedArgs = applyRunnerHierarchyDefaults(args, configuredRunner.profile);
+  const delegationArgs = applyDelegationModeHierarchyDefault(args, configuredRunner.profile);
+  const sharedArgs = applyRunnerHierarchyDefaults(delegationArgs, configuredRunner.profile);
   const taskIdentity = {
     taskId: requireIdentityArg(args.taskId, "--task-id"),
     epoch: requireIdentityArg(args.epoch, "--epoch"),
@@ -604,6 +615,35 @@ async function orchestrate(args) {
     console.log(`ok orchestrated_jobs: ${results.length}`);
   } finally {
     await ownedLiveConsole?.close();
+  }
+}
+
+async function delegate(args) {
+  const brokerUrl = process.env[DELEGATION_BROKER_ENV];
+  if (!brokerUrl) {
+    throw new CliError(
+      "delegate is available only inside a runner-owned local_orchestrator process",
+      1,
+    );
+  }
+  const result = await requestDelegation({
+    url: brokerUrl,
+    payload: {
+      delegateId: requireIdentityArg(args.delegateId, "--delegate-id"),
+      role: requireRole(args.role),
+      focusScope: requireIdentityArg(args.focusScope, "--focus-scope"),
+      assignment: singleLine(requireArg(args.assignment, "--assignment")),
+      expectedOutput: singleLine(requireArg(args.expectedOutput, "--expected-output")),
+      featureProfile: resolveFeatureProfile(args.featureProfile).id,
+    },
+  });
+  console.log(`ok delegated_run_id: ${result.liveConsoleRunId}`);
+  console.log(`ok parent_run_id: ${result.parentRunId}`);
+  console.log(`ok status: ${result.status}`);
+  console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
+  if (result.summary) console.log(`ok summary: ${result.summary}`);
+  if (result.status !== "completed") {
+    throw new CliError(`delegated runner failed: ${result.failure}`, result.exitCode || 1);
   }
 }
 
@@ -715,6 +755,8 @@ function orchestrationFailureResult(packet, options, error) {
     type: "process-runner-result",
     timestamp: new Date().toISOString(),
     jobId: packet.jobId,
+    parentRunId: packet.parentRunId || "none",
+    focusScope: packet.focusScope || "none",
     role: packet.role,
     taskId: packet.taskId,
     epoch: packet.epoch,
@@ -723,6 +765,7 @@ function orchestrationFailureResult(packet, options, error) {
     workType: packet.workType,
     hierarchyFields: packet.hierarchyFields,
     hierarchyPermissionFields: packet.hierarchyPermissionFields,
+    delegationMode: packet.delegationMode,
     supervisionTimingFields: packet.supervisionTimingFields,
     invocationCwd: packet.invocationCwd,
     targetCwd: packet.targetCwd,
@@ -783,13 +826,33 @@ async function runConfiguredCli(commandContext, packet, options) {
   const { timeoutMs, scopePrefixes, profile } = options;
   const tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-runner-"));
   const outputPath = path.join(tempDir, "last-message.md");
-  const prompt = renderRunnerPrompt(packet);
   const cwd = commandContext.targetCwd;
   const beforePaths = readGitChangedPaths(cwd);
-  const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
   const liveConsoleRunId = options.liveConsoleUrl
     ? `${packet.taskId}:${packet.epoch}${packet.jobId ? `:${packet.jobId}` : ""}:${randomUUID()}`
     : "none";
+  const runtimePacket = {
+    ...packet,
+    liveConsoleRunId,
+    delegationBrokerAvailable: false,
+  };
+  const delegationState = { entries: [], scopePrefixes: [] };
+  let delegationBroker = null;
+  if (packet.delegationMode === "local_orchestrator") {
+    delegationBroker = await startDelegationBroker({
+      onDelegate: (request) => runDelegatedChild(
+        commandContext,
+        runtimePacket,
+        options,
+        liveConsoleRunId,
+        request,
+        delegationState,
+      ),
+    });
+    runtimePacket.delegationBrokerAvailable = true;
+  }
+  const prompt = renderRunnerPrompt(runtimePacket);
+  const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
   const publisher = options.liveConsoleUrl
     ? createLiveConsolePublisher({ url: options.liveConsoleUrl, runId: liveConsoleRunId })
     : null;
@@ -802,16 +865,23 @@ async function runConfiguredCli(commandContext, packet, options) {
   let result;
   try {
     if (publisher) {
+      const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
       await publisher.publish({
-        type: "run.started",
-        text: `Runner ${options.runner} started`,
-        data: { status: "running", runner: options.runner, command: invocation.command },
+        type: delegated ? "delegation.started" : "run.started",
+        text: delegated
+          ? `Delegated runner ${options.runner} started`
+          : `Runner ${options.runner} started`,
+        data: liveRunMetadata(runtimePacket, options, invocation.command, "running"),
       });
     }
+    const childEnvironment = { ...process.env };
+    if (delegationBroker) childEnvironment[DELEGATION_BROKER_ENV] = delegationBroker.url;
+    else delete childEnvironment[DELEGATION_BROKER_ENV];
     result = await runStreamingProcess({
       command: invocation.command,
       args: invocation.args,
       cwd,
+      env: childEnvironment,
       input: invocation.input,
       timeoutMs,
       onChunk: (stream, chunk) => streamAdapter.write(stream, chunk),
@@ -835,11 +905,16 @@ async function runConfiguredCli(commandContext, packet, options) {
     guarded.liveConsoleFailure = "none";
     if (publisher) {
       try {
+        const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
         await publisher.publish({
-          type: guarded.status === "completed" ? "run.completed" : "run.failed",
-          text: guarded.status === "completed" ? "Runner completed" : guarded.failure,
+          type: delegated
+            ? guarded.status === "completed" ? "delegation.completed" : "delegation.failed"
+            : guarded.status === "completed" ? "run.completed" : "run.failed",
+          text: guarded.status === "completed"
+            ? delegated ? "Delegated runner completed" : "Runner completed"
+            : guarded.failure,
           data: {
-            status: guarded.status,
+            ...liveRunMetadata(runtimePacket, options, invocation.command, guarded.status),
             exitCode: guarded.exitCode,
           },
         });
@@ -851,8 +926,118 @@ async function runConfiguredCli(commandContext, packet, options) {
     }
     return guarded;
   } finally {
+    await delegationBroker?.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+async function runDelegatedChild(commandContext, parentPacket, options, parentRunId, request, delegationState) {
+  if (parentPacket.delegationMode !== "local_orchestrator") {
+    throw new CliError("leaf workers cannot delegate descendants", 1);
+  }
+  const remainingDepth = parseNonNegativeInteger(parentPacket.hierarchyFields.remaining_depth);
+  const parentDepth = parseNonNegativeInteger(parentPacket.hierarchyFields.depth);
+  const maxDepth = parseNonNegativeInteger(parentPacket.hierarchyFields.max_depth);
+  if (remainingDepth === null || parentDepth === null || maxDepth === null || remainingDepth < 1) {
+    throw new CliError("local delegation requires a positive finite remaining_depth", 1);
+  }
+
+  const focusScope = requireIdentityArg(request?.focusScope, "focusScope");
+  const focusPrefixes = assertMachineRunnableScope({ scope: focusScope }, commandContext.targetCwd);
+  const authorityPrefixes = assertMachineRunnableScope(parentPacket, commandContext.targetCwd);
+  const outsideAuthority = focusPrefixes.filter(
+    (prefix) => !scopePrefixIsContained(prefix, authorityPrefixes),
+  );
+  if (outsideAuthority.length) {
+    throw new CliError(
+      `delegated focus scope is outside parent authority ${parentPacket.scope}: ${focusScope}`,
+      1,
+    );
+  }
+  const delegateId = requireIdentityArg(request?.delegateId, "delegateId");
+  const childDepth = parentDepth + 1;
+  const childRemainingDepth = remainingDepth - 1;
+  const hierarchyMode = maxDepth === 0 ? "none" : maxDepth === 1 ? "one_level" : "n_level";
+  const childArgs = {
+    role: requireRole(request?.role),
+    taskId: parentPacket.taskId,
+    epoch: parentPacket.epoch,
+    scope: focusScope,
+    featureProfile: request?.featureProfile,
+    delegationMode: childRemainingDepth > 0 ? "local_orchestrator" : "leaf",
+    hierarchyMode,
+    maxDepth: String(maxDepth),
+    depth: String(childDepth),
+    remainingDepth: String(childRemainingDepth),
+    hierarchyPermissionSource: "delegated_ceiling",
+    hierarchyOverrideReason: "none",
+    heartbeatInterval: parentPacket.supervisionTimingFields.heartbeat_interval,
+    heartbeatDeadline: parentPacket.supervisionTimingFields.heartbeat_deadline,
+    maxSilence: parentPacket.supervisionTimingFields.max_silence,
+    softTimeout: parentPacket.supervisionTimingFields.soft_timeout,
+    hardTimeout: parentPacket.supervisionTimingFields.hard_timeout,
+    noInterruptUntil: parentPacket.supervisionTimingFields.no_interrupt_until,
+    assignment: singleLine(requireArg(request?.assignment, "assignment")),
+    expectedOutput: singleLine(requireArg(request?.expectedOutput, "expectedOutput")),
+  };
+  const packet = requireAssignmentPacket(childArgs, commandContext);
+  packet.jobId = delegateId;
+  packet.taskScope = parentPacket.taskScope || parentPacket.scope;
+  packet.focusScope = focusScope;
+  packet.parentRunId = parentRunId;
+
+  if (delegationState.entries.some((entry) => entry.delegateId === delegateId)) {
+    throw new CliError(`delegated child id must be unique within its local orchestrator: ${delegateId}`, 1);
+  }
+  const overlapping = delegationState.entries.find((entry) => (
+    scopePrefixSetsOverlap(focusPrefixes, entry.focusPrefixes)
+  ));
+  if (overlapping) {
+    throw new CliError(
+      `delegated focus scopes must not overlap: ${delegateId} (${focusScope}) and ${overlapping.delegateId} (${overlapping.focusScope})`,
+      1,
+    );
+  }
+  delegationState.entries.push({ delegateId, focusScope, focusPrefixes });
+  const collectiveFocusPrefixes = minimizeScopePrefixes([
+    ...delegationState.scopePrefixes,
+    ...focusPrefixes,
+  ]);
+  delegationState.scopePrefixes.splice(
+    0,
+    delegationState.scopePrefixes.length,
+    ...collectiveFocusPrefixes,
+  );
+
+  appendRunnerEntry(commandContext, "Delegated Assignments", renderAssignmentPacket(packet));
+  const childOptions = {
+    ...options,
+    scopePrefixes: delegationState.scopePrefixes,
+  };
+  const result = await runWithRunner(commandContext, packet, childOptions);
+  appendRunnerEntry(commandContext, "Delegated Runner Results", renderRunnerResult(result));
+  return {
+    status: result.status,
+    exitCode: result.exitCode,
+    summary: result.summary,
+    failure: result.failure,
+    liveConsoleRunId: result.liveConsoleRunId,
+    parentRunId,
+  };
+}
+
+function liveRunMetadata(packet, options, command, status) {
+  return {
+    status,
+    runner: options.runner,
+    command,
+    taskId: packet.taskId,
+    role: packet.role,
+    parentRunId: packet.parentRunId || null,
+    depth: Number(packet.hierarchyFields.depth),
+    delegationMode: packet.delegationMode,
+    focusScope: packet.focusScope || null,
+  };
 }
 
 function normalizeRunnerResult(packet, context) {
@@ -886,6 +1071,8 @@ function normalizeRunnerResult(packet, context) {
     type: "process-runner-result",
     timestamp: new Date().toISOString(),
     jobId: packet.jobId,
+    parentRunId: packet.parentRunId || "none",
+    focusScope: packet.focusScope || "none",
     role: packet.role,
     taskId: packet.taskId,
     epoch: packet.epoch,
@@ -894,6 +1081,7 @@ function normalizeRunnerResult(packet, context) {
     workType: packet.workType,
     hierarchyFields: packet.hierarchyFields,
     hierarchyPermissionFields: packet.hierarchyPermissionFields,
+    delegationMode: packet.delegationMode,
     supervisionTimingFields: packet.supervisionTimingFields,
     invocationCwd: packet.invocationCwd,
     targetCwd: packet.targetCwd,
@@ -967,7 +1155,10 @@ role: ${packet.role}
 ${packet.jobId ? `job_id: ${packet.jobId}\n` : ""}task_id: ${packet.taskId}
 epoch: ${packet.epoch}
 scope: ${packet.scope}
-${packet.taskScope ? `task_scope: ${packet.taskScope}\nowner_scope: ${packet.scope}\n` : ""}feature_profile: ${featureProfileId(packet)}
+${packet.taskScope ? `task_scope: ${packet.taskScope}\nowner_scope: ${packet.scope}\n` : ""}${packet.focusScope ? `focus_scope: ${packet.focusScope}\n` : ""}run_id: ${packet.liveConsoleRunId || "none"}
+parent_run_id: ${packet.parentRunId || "none"}
+delegation_mode: ${packet.delegationMode}
+feature_profile: ${featureProfileId(packet)}
 work_type: ${workTypeId(packet)}
 invocation_cwd: ${packet.invocationCwd}
 target_cwd: ${packet.targetCwd}
@@ -979,12 +1170,13 @@ Boundaries:
 - Do not treat the invocation cwd as the workflow state root unless it is the same as the target/jobsite cwd.
 - Stay inside the declared scope.
 ${packet.jobId ? `- You own only owner_scope ${packet.scope}; do not edit or claim work outside that owner scope.\n` : ""}- ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
-- Preserve unrelated user or worker changes.
+${packet.focusScope ? `- Your enforceable child scope is focus_scope ${packet.focusScope}; do not edit or claim work outside it.\n` : ""}- Preserve unrelated user or worker changes.
 - Do not commit.
 - Do not edit ~/.codex/plugins/cache directly.
 - Do not claim success for unavailable, skipped, or failed checks.
 - ${renderFeatureProfilePromptGuidance(packet)}
 - ${DEBUG_INTEGRITY}
+${renderDelegationPrompt(packet)}
 ${CODING_CONDUCT_GATE_NAME}:
 ${renderCodingConductFields()}
 ${renderRunnerPromptContractCoverageGate(packet)}
@@ -1006,6 +1198,26 @@ Return exactly these sections, kept concise:
 ${renderMetacognitiveReturnSections(packet)}
 - next:
 `;
+}
+
+function renderDelegationPrompt(packet) {
+  if (packet.delegationMode === "leaf") {
+    return `Delegation:
+- delegation_mode: leaf
+- delegation_broker_available: false
+- Complete this assignment yourself. Do not create descendants.`;
+  }
+  const cliPath = realpathSync(process.argv[1]);
+  return `Delegation:
+- delegation_mode: local_orchestrator
+- delegation_broker_available: ${packet.delegationBrokerAvailable}
+- ${DELEGATION_BROKER_CONTRACT}
+- Delegate only when a bounded internal helper materially improves this assignment; do not repeat the parent task split.
+- The helper inherits this worker's authority scope. Use --focus-scope only to narrow its local focus inside that authority.
+- Give sibling helpers unique stable IDs and non-overlapping focus scopes; each helper owns its focus end to end.
+- Choose --role from: ${ROLES.join(", ")}.
+- Never launch a descendant CLI directly. Use this broker command and wait for its result before integrating your own final output:
+  node ${JSON.stringify(cliPath)} delegate --delegate-id <stable-id> --role <role> --focus-scope <machine-scope> --assignment <text> --expected-output <text>`;
 }
 
 function verifyAssignments(args) {
@@ -2031,6 +2243,7 @@ function insertAfterLineMatching(text, pattern, block, fallback) {
 }
 
 function requireAssignmentPacket(args, commandContext) {
+  const hierarchyFields = resolveHierarchyFields(args);
   const packet = {
     type: "assignment",
     timestamp: new Date().toISOString(),
@@ -2041,8 +2254,9 @@ function requireAssignmentPacket(args, commandContext) {
     scope: requireIdentityArg(args.scope, "--scope"),
     featureProfile: resolveFeatureProfile(args.featureProfile),
     workType: commandContext.workType,
-    hierarchyFields: resolveHierarchyFields(args),
+    hierarchyFields,
     hierarchyPermissionFields: resolveHierarchyPermissionFields(args),
+    delegationMode: resolveDelegationMode(args.delegationMode, hierarchyFields),
     supervisionTimingFields: resolveSupervisionTimingFields(args),
     invocationCwd: commandContext.invocationCwd,
     targetCwd: commandContext.targetCwd,
@@ -2375,11 +2589,13 @@ function renderAssignmentPacket(packet) {
 
 - type: assignment
 - role: ${packet.role}
-${packet.jobId ? `- job_id: ${packet.jobId}\n` : ""}- status: ${packet.status}
+${packet.jobId ? `- job_id: ${packet.jobId}\n` : ""}${packet.parentRunId ? `- parent_run_id: ${packet.parentRunId}\n` : ""}- status: ${packet.status}
 - task_id: ${packet.taskId}
 - epoch: ${packet.epoch}
 - scope: ${packet.scope}
-${packet.taskScope ? `- task_scope: ${packet.taskScope}\n- owner_scope: ${packet.scope}\n` : ""}- feature_profile: ${featureProfileId(packet)}
+${packet.taskScope ? `- task_scope: ${packet.taskScope}\n- owner_scope: ${packet.scope}\n` : ""}${packet.focusScope ? `- focus_scope: ${packet.focusScope}\n` : ""}- delegation_mode: ${packet.delegationMode}
+- delegation_broker_contract: ${DELEGATION_BROKER_CONTRACT}
+- feature_profile: ${featureProfileId(packet)}
 - work_type: ${workTypeId(packet)}
 - invocation_cwd: ${packet.invocationCwd}
 - target_cwd: ${packet.targetCwd}
@@ -2456,6 +2672,8 @@ function renderOrchestrationSkeleton(packet) {
 - task_id: ${packet.taskId}
 - epoch: ${packet.epoch}
 - scope: ${packet.scope}
+- delegation_mode: ${packet.delegationMode}
+- delegation_broker_contract: ${DELEGATION_BROKER_CONTRACT}
 - feature_profile: ${featureProfileId(packet)}
 - work_type: ${workTypeId(packet)}
 - invocation_cwd: ${packet.invocationCwd}
@@ -2476,11 +2694,14 @@ ${renderMetacognitiveGatePacketSchema(packet.metacognitiveGate)}
 
 function renderRunnerResult(result) {
   if (result.status === "completed") {
+    const lineage = result.parentRunId !== "none"
+      ? `- parent_run_id: ${result.parentRunId}\n- focus_scope: ${result.focusScope}\n- delegation_mode: ${result.delegationMode}\n- live_console_run_id: ${result.liveConsoleRunId}\n`
+      : "";
     return `### ${result.timestamp} ${result.role} ${result.taskId}
 
 - type: ${result.type}
 - role: ${result.role}
-${result.jobId ? `- job_id: ${result.jobId}\n` : ""}- status: completed
+${result.jobId ? `- job_id: ${result.jobId}\n` : ""}${lineage}- status: completed
 - task_id: ${result.taskId}
 - epoch: ${result.epoch}
 - scope: ${result.scope}
@@ -2492,10 +2713,12 @@ ${result.jobId ? `- job_id: ${result.jobId}\n` : ""}- status: completed
 
 - type: ${result.type}
 - role: ${result.role}
-${result.jobId ? `- job_id: ${result.jobId}\n` : ""}- status: ${result.status}
+${result.jobId ? `- job_id: ${result.jobId}\n` : ""}${result.parentRunId !== "none" ? `- parent_run_id: ${result.parentRunId}\n` : ""}- status: ${result.status}
 - task_id: ${result.taskId}
 - epoch: ${result.epoch}
 - scope: ${result.scope}
+- focus_scope: ${result.focusScope}
+- delegation_mode: ${result.delegationMode}
 - feature_profile: ${featureProfileId(result)}
 - work_type: ${workTypeId(result)}
 - invocation_cwd: ${result.invocationCwd}
@@ -4021,6 +4244,36 @@ function resolveWorkType(value) {
   };
 }
 
+function applyDelegationModeHierarchyDefault(args = {}, profile = null) {
+  if (args.delegationMode !== "local_orchestrator" || hasExplicitHierarchyFields(args)) return args;
+  if (profile?.defaultHierarchyDepth !== undefined) return args;
+  return {
+    ...args,
+    ...hierarchyArgsForMaxDepth(1),
+  };
+}
+
+function resolveDelegationMode(value, hierarchyFields) {
+  const remainingDepth = parseNonNegativeInteger(hierarchyFields.remaining_depth);
+  const inferred = remainingDepth > 0 ? "local_orchestrator" : "leaf";
+  const mode = value === undefined || value === null || !String(value).trim()
+    ? inferred
+    : singleLine(value);
+  if (!DELEGATION_MODES.includes(mode)) {
+    throw new CliError(
+      `invalid --delegation-mode: expected ${DELEGATION_MODES.join(" or ")}`,
+      1,
+    );
+  }
+  if (mode === "leaf" && remainingDepth !== 0) {
+    throw new CliError("delegation_mode leaf requires remaining_depth 0", 1);
+  }
+  if (mode === "local_orchestrator" && !(remainingDepth > 0)) {
+    throw new CliError("delegation_mode local_orchestrator requires remaining_depth greater than 0", 1);
+  }
+  return mode;
+}
+
 function resolveHierarchyFields(args = {}) {
   const mode = args.hierarchyMode === undefined || args.hierarchyMode === null || !String(args.hierarchyMode).trim()
     ? DEFAULT_HIERARCHY_FIELDS.hierarchy_mode
@@ -4269,11 +4522,12 @@ function printHelp() {
 
 Usage:
   node bin/cli-agent-runner.mjs intake [--cwd <path>] [--target-cwd <path>] [--work-type <id>] --task <text> --task-id <id> --epoch <epoch> --scope <scope>
-  node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
+  node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
   node bin/cli-agent-runner.mjs collect [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] --status <status> --lifecycle-disposition state_retired|continuation_expected [--cancel-reason <allowed-reason>] [--findings <text>] [--changed-files <text>] [--verification <text>] [--blockers <text>] [--assumptions <text>] [--next <text>] [--finalization-references <typed-refs>] [--expected-outcome <text>] [--actual-result <text>] [--reproduction-or-evidence <text>] [--failure-point <text>] [--hypothesis-branches <text>] [--source-of-truth-boundary <text>] [--plugin-contract-boundary <text>] [--generated-artifact-boundary <text>] [--before-context-effects <text>] [--after-context-effects <text>] [--cross-feature-consequences <text>] [--root-cause <text>] [--fix-summary <text>] [--verification-evidence <text>] [--skipped-checks <text>] [--unresolved-risks <text>] [--next-investigation <text>]
   node bin/cli-agent-runner.mjs finalize [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--contract-coverage required] --decision-coverage <text> --completion-coverage <text> --source-spec-coverage <text>
-  node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
-  node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs delegate --delegate-id <id> --role <role> --focus-scope <machine-scope> --assignment <text> --expected-output <text> [--feature-profile <id>]
   node bin/cli-agent-runner.mjs live-console [--port <0-65535>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
   node bin/cli-agent-runner.mjs normalize-debugging-integrity [--cwd <path>] [--target-cwd <path>] [--execute]
@@ -4289,6 +4543,7 @@ Commands:
   run      Execute one configured CLI worker. Without --runner, record the legacy single-assignment skeleton.
   orchestrate
            Validate independent version-1 jobs, append every assignment, launch all jobs in parallel with one runner and Live Console, then append results in jobs-file order. Owner scopes must be inside the top-level task scope and pairwise non-overlapping.
+  delegate Worker-only local delegation client. It requires the runner-owned broker environment and cannot select a target, task identity, runner, or authority scope.
   live-console
            Start the built-in token-protected loopback viewer server for Codex IAB and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments
@@ -4311,6 +4566,7 @@ State:
   Fieldless current packets are invalid. unknown_legacy is accepted only for pre-contract workflow state or non-current packets that predate the recorded lifecycle contract activation time; validation does not synthesize retirement.
   --runtime-thread-closed is rejected globally for every command. The workflow CLI never emits or accepts runtime_thread_closed=true. Interruption and process exit are not runtime-thread closure evidence.
   Parent-managed child-worker prompts also suppress nested CLI Agent Runner preflight; child workers do not ask \`cli-agent-runner を使いますか？ [Y/n]\` or start independent nested CLI Agent Runner workflows inside an assigned task_id/epoch/scope. Descendant delegation is allowed only when finite hierarchy fields grant remaining_depth > 0 and inherited supervision is preserved.
+  delegation_mode leaf exposes no broker. delegation_mode local_orchestrator exposes a runner-owned loopback broker, and every accepted descendant inherits task lineage, runner profile, authority scope, supervision, and decremented remaining_depth. Codex, Claude, Grok, and custom profiles use the same provider-neutral broker path.
   Supervision treats silence before heartbeat deadline as neutral, forbids cancel/interruption/workflow state_retired/replacement of quiet workers during the no-interrupt window, requires workers that are still running at heartbeat_interval to self-report completed/current/blocker/ETA progress, treats explicit completed/blocked/failed results as immediate collect/integrate triggers rather than silence, treats heartbeat as telemetry rather than completion evidence, requires explicit state_retired reasons (${SUPERVISION_RETIRE_CANCEL_REASONS.join(", ")}), and uses missed heartbeat -> soft ping/status request -> grace wait -> stale mark before cancel/replace.
   Optional --feature-profile overlays provide scoped assignment guidance only. Known ids: ${knownFeatureProfileIds().join(", ")}.
   Optional --work-type is semantic command metadata. Known ids: ${knownWorkTypeIds().join(", ")}.
