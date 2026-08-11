@@ -34,7 +34,7 @@
       "Machine-Checkable Scope Guard"
     ],
     "defaultPrompt": [
-      "Use CLI Agent Runner to start and open its Live Console before project work, then launch a scoped Codex, Claude, Grok, or configured CLI worker and return its process-runner-result.",
+      "Use CLI Agent Runner: open Live Console before project work, then launch a scoped Codex, Claude, Grok, or configured CLI worker.",
       "Start CLI Agent Runner Live Console in Codex IAB first, keep it standing by, and later stream a scoped Grok worker into it.",
       "Add or use a custom CLI runner from JSON for this .cli-agent-runner task."
     ],

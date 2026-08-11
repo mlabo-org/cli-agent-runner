@@ -76,6 +76,10 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     ),
     "every manifest prompt must route to the CLI worker workflow",
   );
+  assert.ok(
+    manifest.interface.defaultPrompt.every((prompt) => prompt.length <= 128),
+    "every manifest prompt must satisfy the plugin manifest limit",
+  );
 
   assert.ok(frontmatterDescription.length <= 320, "skill description must stay routing-budget concise");
   assert.match(frontmatterDescription.slice(0, 160), /^Run Grok, Claude, Codex, or custom CLI workers/i);
