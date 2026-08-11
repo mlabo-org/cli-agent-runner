@@ -4,13 +4,36 @@
   "private": true,
   "description": "Scoped CLI worker runner with a built-in IAB Live Console.",
   "type": "module",
+  "license": "MIT",
+  "author": "Makoto Suzuki",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mlabo-org/cli-agent-runner.git"
+  },
+  "homepage": "https://github.com/mlabo-org/cli-agent-runner#readme",
+  "bugs": {
+    "url": "https://github.com/mlabo-org/cli-agent-runner/issues"
+  },
+  "keywords": [
+    "codex",
+    "cli-agent",
+    "multi-agent",
+    "local-orchestrator",
+    "live-console"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "cli-agent-runner": "./bin/cli-agent-runner.mjs"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
+    "check": "npm test",
     "test:cli": "node --test tests/metacognitive-gate.test.mjs tests/workflow-state.test.mjs",
     "test:live": "node --test tests/live-console.test.mjs tests/live-runner.test.mjs",
-    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd ."
+    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd .",
+    "plugin:install:check": "node scripts/install-plugin.mjs --check",
+    "plugin:install": "node scripts/install-plugin.mjs --install"
   }
 }

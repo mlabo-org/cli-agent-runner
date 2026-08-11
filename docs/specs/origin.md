@@ -7,7 +7,7 @@ project.
 
 ## Extracted Source
 
-- source repository: `/Users/suzukimakoto/plugins/coding-agents`
+- source repository: `mlabo-org/coding-agents`
 - source commit: `6cb9ecf35ee3dcc875c8c0bbf61bcce3a6eeaba0`
 - source commit date: `2026-07-10 11:31:19 +0900`
 - source commit subject: `Make Coding Agents explicit-only`
@@ -29,7 +29,7 @@ identities were renamed together so this plugin can coexist without sharing
 runtime state:
 
 - plugin and skill: `cli-agent-runner`
-- source root: `/Users/suzukimakoto/plugins/cli-agent-runner`
+- canonical local source root: `<user-home>/plugins/cli-agent-runner`
 - CLI: `bin/cli-agent-runner.mjs`
 - workflow state: `.cli-agent-runner/`
 - migration script: `scripts/migrate-legacy-cli-agent-runner-state.mjs`
