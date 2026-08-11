@@ -1,7 +1,7 @@
 ---
 name: cli-agent-runner
 description: >-
-  Launch scoped Codex, Claude, Grok, or configured CLI workers and record process-runner-result state in .cli-agent-runner. Trigger on CLI Agent Runner, cli-agent-runner, Claude/Grok CLI workers, custom runner JSON, or workflow continuation/audit/repair. Excludes ordinary official-subagent work.
+  Launch scoped Codex, Claude, Grok, or configured CLI workers through CLI Agent Runner and record separate execution, artifact-acceptance, and result-contract outcomes. Triggers: cli-agent-runner, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; excludes ordinary official subagents.
 ---
 
 # CLI Agent Runner
@@ -31,6 +31,8 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - The first action after trigger is target resolution followed by project intake. Determine `invocation_cwd`, resolve the jobsite from the explicit target or default cwd rule, read the local `AGENTS.md` chain that applies to the jobsite when available, inspect the jobsite repository shape, check Git state, resolve `<git-root>`, inspect existing `.cli-agent-runner` state, inspect `.git/info/exclude`, and identify legacy `docs/codex` material only as migration input.
 - During source upgrade work, direct execution of the source CLI runs source-tree behavior: `node /Users/suzukimakoto/plugins/cli-agent-runner/bin/cli-agent-runner.mjs ...`. This validates source behavior, not installed plugin activation.
 - `run --runner <id>` resolves one validated runner profile, launches it with the jobsite as cwd, captures its configured result source plus process stdout/stderr, applies the declared scope guard, and derives the `process-runner-result` status, summary, exit code, signal, timeout, and failure fields.
+- A `process-runner-result` keeps three decisions independent: `status` reports child execution plus scope-guard outcome, `artifact_status` leaves artifact acceptance with the parent, and `result_contract_status` plus `result_contract_failure` report whether the worker's return format satisfies the required result contract.
+- An exit-zero in-scope child remains `status: completed` and `artifact_status: parent_acceptance_pending` when its report is `result_contract_status: nonconformant`. The CLI records the contract failure without populating process `failure` or converting the child execution or artifacts into failure. The parent must still inspect the artifacts and record a follow-up collection before verification accepts the workflow.
 - The parent owns the assignment, allowed scope, acceptance decision, and user-facing synthesis. The CLI child worker owns only the scoped transformation and its returned result material.
 - Installed plugin activation is controlled by refreshing the plugin cache from validated source and then restarting Codex or opening a new thread when required. Do not claim a source CLI run proves cached plugin activation.
 - Maintain `<git-root>/.cli-agent-runner/` as the workflow SSOT for the active job.

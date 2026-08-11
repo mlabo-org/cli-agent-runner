@@ -1189,6 +1189,9 @@ test("verify rejects completed codex-cli runner results until worker result is c
     assert.equal(run.status, 0, run.stderr);
     let runner = readState(repo, "runner.md");
     assert.match(runner, /type: process-runner-result[\s\S]*status: completed/);
+    assert.match(runner, /type: process-runner-result[\s\S]*artifact_status: parent_acceptance_pending/);
+    assert.match(runner, /type: process-runner-result[\s\S]*result_contract_status: not_required/);
+    assert.match(runner, /type: process-runner-result[\s\S]*result_contract_failure: none/);
     assert.doesNotMatch(runner, /type: parent-integration/);
 
     const uncollected = runCli(["verify-assignments", "--target-cwd", repo]);
@@ -1807,6 +1810,8 @@ process.stdout.write("fake codex completed\\n");
     const runner = readState(repo, "runner.md");
     assert.match(runner, /type: process-runner-result/);
     assert.match(runner, /status: failed/);
+    assert.match(runner, /artifact_status: indeterminate/);
+    assert.match(runner, /result_contract_status: not_required/);
     assert.match(runner, /failure: runner changed files outside scope allowed\.txt: outside\.txt/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
