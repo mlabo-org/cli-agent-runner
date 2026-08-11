@@ -288,16 +288,12 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - Live Console transport is observation, not workflow state or artifact
      acceptance. `.cli-agent-runner/runner.md` remains the durable result record;
      a transport failure is reported separately from child execution status.
-   - A process runner result records separate outcomes. `status` and `failure`
-     belong only to execution and scope enforcement; `artifact_status` leaves
-     artifact acceptance with the parent; `result_contract_status` and
-     `result_contract_failure` own worker-report conformance.
-   - An exit-zero in-scope process with a nonconformant report remains
-     `status: completed`, records `artifact_status: parent_acceptance_pending`,
-     and records the report defect as `result_contract_status: nonconformant`.
-     Verification still requires a parent follow-up collection, so separating
-     the statuses does not silently accept the artifacts or the malformed
-     report.
+   - An exit-zero, in-scope process runner result is terminal. Record one
+     minimal `process-runner-result` with `status: completed`, runner identity,
+     exit code, and summary.
+   - Successful process results do not have a second worker-report conformance
+     status, parent-acceptance-pending state, mandatory follow-up collection,
+     task finalization, or post-success validator chain.
    - Missing explicitly selected config, invalid JSON or profiles, unknown
      runner IDs, invalid timeout, and non-machine-checkable runner scope must
      fail before assignment state is appended or the child process launches.

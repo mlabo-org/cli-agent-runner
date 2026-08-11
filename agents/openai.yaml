@@ -1,3 +1,3 @@
 display_name: CLI Agent Runner
 short_description: Run scoped CLI workers with a default-on IAB Live Console.
-default_prompt: Use CLI Agent Runner: open and keep its IAB Live Console before project work; launch a scoped Grok or CLI worker, preserve profile delegation ceilings unless a reasoned override is authorized, and record execution/artifact/result state.
+default_prompt: Use CLI Agent Runner: open its IAB Live Console before project work; launch a scoped Grok or CLI worker, keep profile delegation ceilings unless an authorized override applies, and stop after a minimal completed result on exit zero.

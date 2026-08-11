@@ -536,7 +536,7 @@ test("cache/runtime versus source mismatch triggers the metacognitive gate", () 
   }
 });
 
-test("source-change work triggers the metacognitive gate", () => {
+test("ordinary source-change work does not trigger the debug-repair metacognitive gate", () => {
   const repo = makeTempGitRepo();
   try {
     const intake = runCli([
@@ -554,35 +554,8 @@ test("source-change work triggers the metacognitive gate", () => {
     ]);
 
     assert.equal(intake.status, 0, intake.stderr);
-    assert.match(intake.stdout, /ok metacognitive_gate_required: true/);
-    assert.match(intake.stdout, /source change/);
-    assert.match(readState(repo, "task.md"), /metacognitive_gate_triggers: .*source change/);
-
-    const rejected = runCli([
-      "collect",
-      "--target-cwd",
-      repo,
-      "--role",
-      "Implementer",
-      "--task-id",
-      "meta-source-change",
-      "--epoch",
-      "e1",
-      "--scope",
-      "bin/cli-agent-runner.mjs",
-      "--status",
-      "completed",
-      "--findings",
-      "patched source",
-      "--changed-files",
-      "bin/cli-agent-runner.mjs",
-      "--verification",
-      "not run",
-      ...contractCoverageArgs("meta-doc-work-type"),
-    ]);
-
-    assert.notEqual(rejected.status, 0);
-    assert.match(rejected.stderr, /collect --status completed rejected/);
+    assert.match(intake.stdout, /ok metacognitive_gate_required: false/);
+    assert.match(readState(repo, "task.md"), /metacognitive_gate_triggers: none/);
     assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
   } finally {
     rmSync(repo, { recursive: true, force: true });
@@ -679,7 +652,7 @@ test("documentation work type suppresses keyword and path inference for docs-onl
   }
 });
 
-test("explicit auto work type preserves current keyword and path inference", () => {
+test("explicit auto work type does not infer a debug gate from a source path", () => {
   const repo = makeTempGitRepo();
   try {
     const intake = runCli([
@@ -700,15 +673,14 @@ test("explicit auto work type preserves current keyword and path inference", () 
 
     assert.equal(intake.status, 0, intake.stderr);
     assert.match(intake.stdout, /ok work_type: auto/);
-    assert.match(intake.stdout, /ok metacognitive_gate_required: true/);
-    assert.match(intake.stdout, /source\/test\/config path scope/);
+    assert.match(intake.stdout, /ok metacognitive_gate_required: false/);
     assert.match(readState(repo, "task.md"), /work_type: auto/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
 });
 
-test("source, test, and config path scopes trigger the metacognitive gate even with bland task text", () => {
+test("source, test, and config path scopes do not trigger the debug gate by themselves", () => {
   const repo = makeTempGitRepo();
   try {
     for (const [taskId, scope] of [
@@ -731,8 +703,7 @@ test("source, test, and config path scopes trigger the metacognitive gate even w
       ]);
 
       assert.equal(intake.status, 0, intake.stderr);
-      assert.match(intake.stdout, /ok metacognitive_gate_required: true/);
-      assert.match(intake.stdout, /source\/test\/config path scope/);
+      assert.match(intake.stdout, /ok metacognitive_gate_required: false/);
     }
   } finally {
     rmSync(repo, { recursive: true, force: true });
@@ -765,7 +736,7 @@ test("English and Japanese debug and test-failure terms trigger the metacognitiv
   }
 });
 
-test("Japanese source edit wording triggers the metacognitive gate", () => {
+test("Japanese source edit wording does not trigger the debug gate by itself", () => {
   const repo = makeTempGitRepo();
   try {
     const intake = runCli([
@@ -783,9 +754,8 @@ test("Japanese source edit wording triggers the metacognitive gate", () => {
     ]);
 
     assert.equal(intake.status, 0, intake.stderr);
-    assert.match(intake.stdout, /ok metacognitive_gate_required: true/);
-    assert.match(intake.stdout, /source change/);
-    assert.match(readState(repo, "task.md"), /metacognitive_gate_triggers: .*source change/);
+    assert.match(intake.stdout, /ok metacognitive_gate_required: false/);
+    assert.match(readState(repo, "task.md"), /metacognitive_gate_triggers: none/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -897,7 +867,7 @@ test("assign and run skeletons carry the metacognitive gate for gate-required wo
   }
 });
 
-test("run separates nonconformant result reports from completed process and parent artifact acceptance", () => {
+test("successful run stops at one minimal completed process result", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
   try {
@@ -939,19 +909,16 @@ process.stdout.write("fake codex completed\\n");
 
     assert.equal(run.status, 0, run.stderr);
     assert.match(run.stdout, /ok status: completed/);
-    assert.match(run.stdout, /ok artifact_status: parent_acceptance_pending/);
-    assert.match(run.stdout, /warn result_contract_status: nonconformant/);
     const runner = readState(repo, "runner.md");
-    assert.match(runner, /type: process-runner-result/);
-    assert.match(runner, /status: completed/);
-    assert.match(runner, /artifact_status: parent_acceptance_pending/);
-    assert.match(runner, /result_contract_status: nonconformant/);
-    assert.match(runner, /result_contract_failure: runner result contract missing metacognitive gate fields: .*expected_outcome/);
-    assert.match(runner, /failure: none/);
-    assert.match(runner, /expected_outcome: done/);
-    const pendingParentAcceptance = runCli(["verify-assignments", "--target-cwd", repo]);
-    assert.notEqual(pendingParentAcceptance.status, 0);
-    assert.match(pendingParentAcceptance.stdout, /uncollected completed runner result missing follow-up worker result collection/);
+    const processResult = runner.slice(runner.lastIndexOf("- type: process-runner-result"));
+    assert.match(processResult, /status: completed/);
+    assert.match(processResult, /runner: codex-cli/);
+    assert.match(processResult, /exit_code: 0/);
+    assert.deepEqual(
+      [...processResult.matchAll(/^- ([^:]+):/gm)].map((match) => match[1]),
+      ["type", "role", "status", "task_id", "epoch", "scope", "runner", "exit_code", "summary"],
+    );
+    assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });
