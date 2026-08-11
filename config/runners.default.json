@@ -54,7 +54,8 @@
       ],
       "prompt": "argument",
       "result": "stdout",
-      "stream": "messages-json"
+      "stream": "messages-json",
+      "defaultHierarchyDepth": 1
     }
   }
 }

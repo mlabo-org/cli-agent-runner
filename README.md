@@ -26,6 +26,6 @@ When the plugin skill owns the workflow, it starts `live-console --port 0` first
 
 Console-free operation is explicit-only. Use `--no-live-console` or its `--silent` alias only after the user has asked for silent mode, no console, or Live Console OFF. These flags cannot be combined with positive Live Console options.
 
-The bundled Grok profile uses its Anthropic Messages-compatible streaming JSON output. Other profiles still use the same provider-neutral runner path and publish whatever stdout/stderr their CLI emits. The existing process result, timeout, result-contract, and repository scope-guard decisions remain authoritative.
+The bundled Grok profile uses its Anthropic Messages-compatible streaming JSON output and defaults otherwise unspecified runs to one level of descendant delegation. Grok decides whether direct child agents are useful, and those children cannot delegate again. `--hierarchy-mode none` opts out for a run; any explicit hierarchy flag overrides the profile default. Bundled Codex and Claude profiles retain the no-descendant default. Every profile still uses the same provider-neutral runner path, and the existing process result, timeout, result-contract, and repository scope-guard decisions remain authoritative.
 
 See [docs/live-console.md](docs/live-console.md) for the event and IAB handoff contract, and [docs/runner-configuration.md](docs/runner-configuration.md) for custom profiles.
