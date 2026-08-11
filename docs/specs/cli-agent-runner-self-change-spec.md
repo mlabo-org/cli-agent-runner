@@ -230,6 +230,21 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - Nested descendants also inherit the finite delegation depth and supervision
      contract. They cannot broaden scope, depth, permissions, or cancellation
      authority.
+   - Every assignment resolves `delegation_mode` to exactly `leaf` or
+     `local_orchestrator`. `leaf` requires zero remaining depth and exposes no
+     descendant route. `local_orchestrator` requires positive remaining depth
+     and receives a runner-owned, token-protected loopback broker.
+   - Descendants must be launched through the broker rather than through a
+     provider-specific execution branch or an independent nested workflow. The
+     broker inherits task identity, epoch, configured runner profile, authority
+     scope, supervision, Live Console transport, and decremented hierarchy
+     fields. Every descendant ID is unique within its immediate orchestrator;
+     sibling `focus_scope` values must remain within the immediate delegator's
+     authority and must not overlap. The broker confines concurrent descendants
+     to the collective declared focus set in the repository scope guard.
+   - The worker-only `delegate` client cannot select a target cwd, task identity,
+     runner profile, authority scope, hierarchy ceiling, or Live Console URL.
+     It fails closed outside a broker-injected worker process.
 
 11. Configurable CLI runner registry and Live Console
    - Standard runner profiles are `codex-cli`, `claude-cli`, and `grok-cli`.
@@ -249,6 +264,10 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      jobsite as process cwd, inherit the current environment, and share the
      existing timeout, bounded-output, scope-guard, and normalized
      `process-runner-result` path.
+   - The local delegation broker is profile-generic. Explicit
+     `--delegation-mode local_orchestrator` supplies one direct-child level when
+     a selected profile has no hierarchy default, so Codex, Claude, Grok, and
+     custom runners use the same mechanism without provider-ID branches.
    - Stream decoding is selected by the profile, never by a provider-ID branch.
      The bundled Grok profile uses its Anthropic Messages-compatible streaming
      JSON output and the `messages-json` adapter reconstructs assistant text for
@@ -296,6 +315,11 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - Live Console transport is observation, not workflow state or artifact
      acceptance. `.cli-agent-runner/runner.md` remains the durable result record;
      a transport failure is reported separately from child execution status.
+   - Brokered descendants publish on independent run IDs with
+     `delegation.started`, `delegation.completed`, or `delegation.failed` events.
+     Their event data and snapshot metadata carry `parentRunId`, `depth`,
+     `delegationMode`, and `focusScope`. Provider-private descendants that bypass
+     the broker are not tracked lineage.
    - An exit-zero, in-scope process runner result is terminal. Record one
      minimal `process-runner-result` with `status: completed`, runner identity,
      exit code, and summary.

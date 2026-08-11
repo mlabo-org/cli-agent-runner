@@ -49,6 +49,7 @@ h2 { font-size: .92rem; font-weight: 700; letter-spacing: -.01em; }
 .run-item { width: 100%; gap: .62rem; border: 1px solid transparent; border-radius: .45rem; padding: .66rem; color: inherit; text-align: left; background: transparent; cursor: pointer; }
 .run-item:hover { background: #102832; }
 .run-item[aria-selected="true"] { border-color: #3c7a85; background: var(--surface-active); }
+.run-item.is-child-run { margin-left: var(--lineage-indent, .8rem); width: calc(100% - var(--lineage-indent, .8rem)); border-left-color: #315660; }
 .run-status { flex: none; width: .52rem; height: .52rem; border-radius: 50%; background: #778c91; }
 .run-status[data-status="running"] { background: var(--success); box-shadow: 0 0 0 .16rem rgba(91, 209, 156, .12); }
 .run-status[data-status="failed"] { background: var(--error); }

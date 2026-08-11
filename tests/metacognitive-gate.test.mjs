@@ -837,7 +837,7 @@ test("assign and run skeletons carry the metacognitive gate for gate-required wo
     assert.equal(assigned.status, 0, assigned.stderr);
 
     const run = runCli([
-      "orchestrate",
+      "run",
       "--target-cwd",
       repo,
       "--role",

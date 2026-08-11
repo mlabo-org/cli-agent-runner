@@ -70,11 +70,18 @@ function deriveStatus(event, prior = "running") {
 function upsertEvent(input) {
   const event = normalizeEnvelope(input);
   if (!event) return;
-  const run = state.runs.get(event.runId) || { runId: event.runId, status: "running", events: [] };
+  const run = state.runs.get(event.runId) || {
+    runId: event.runId, status: "running", parentRunId: null, depth: 0,
+    delegationMode: "leaf", focusScope: null, events: [],
+  };
   if (run.events.some((known) => known.sequence === event.sequence && known.timestamp === event.timestamp)) return;
   run.events.push(event);
   run.events.sort((left, right) => left.sequence - right.sequence || String(left.timestamp).localeCompare(String(right.timestamp)));
   run.status = deriveStatus(event, run.status);
+  if (typeof event.data?.parentRunId === "string" && event.data.parentRunId) run.parentRunId = event.data.parentRunId;
+  if (Number.isSafeInteger(event.data?.depth) && event.data.depth >= 0) run.depth = event.data.depth;
+  if (["leaf", "local_orchestrator"].includes(event.data?.delegationMode)) run.delegationMode = event.data.delegationMode;
+  if (typeof event.data?.focusScope === "string" && event.data.focusScope) run.focusScope = event.data.focusScope;
   state.runs.set(run.runId, run);
   if (!state.selectedRunId) state.selectedRunId = run.runId;
 }
@@ -83,7 +90,12 @@ function hydrateSnapshot(payload) {
   const runs = Array.isArray(payload) ? payload : Array.isArray(payload?.runs) ? payload.runs : [];
   for (const candidate of runs) {
     if (candidate?.events) {
-      const run = state.runs.get(String(candidate.runId)) || { runId: String(candidate.runId), status: candidate.status || "running", events: [] };
+      const run = state.runs.get(String(candidate.runId)) || {
+        runId: String(candidate.runId), status: candidate.status || "running",
+        parentRunId: candidate.parentRunId || null, depth: candidate.depth || 0,
+        delegationMode: candidate.delegationMode || "leaf", focusScope: candidate.focusScope || null,
+        events: [],
+      };
       run.status = candidate.status || run.status;
       state.runs.set(run.runId, run);
       for (const event of candidate.events) upsertEvent({ ...event, runId: event.runId || run.runId });
@@ -94,15 +106,17 @@ function hydrateSnapshot(payload) {
 }
 
 function renderRuns() {
-  const runs = [...state.runs.values()].sort((a, b) => (b.events.at(-1)?.timestamp || "").localeCompare(a.events.at(-1)?.timestamp || ""));
+  const runs = orderRunsByLineage([...state.runs.values()]);
   elements.runCount.textContent = String(runs.length);
   elements.runList.replaceChildren();
   elements.runEmpty.hidden = runs.length > 0;
   for (const run of runs) {
     const button = document.createElement("button");
-    button.className = "run-item"; button.type = "button"; button.role = "option";
+    button.className = `run-item${run.parentRunId ? " is-child-run" : ""}`; button.type = "button"; button.role = "option";
+    if (run.parentRunId) button.style.setProperty("--lineage-indent", `${Math.min(Math.max(run.depth, 1), 4) * .8}rem`);
     button.setAttribute("aria-selected", String(run.runId === state.selectedRunId));
-    button.innerHTML = `<span class="run-status" data-status="${run.status}"></span><span class="run-name"><strong>${escapeHtml(run.runId)}</strong><small>${escapeHtml(run.status)} · ${run.events.length} event${run.events.length === 1 ? "" : "s"}</small></span><span class="event-count">${readableTime(run.events.at(-1)?.timestamp)}</span>`;
+    const lineage = run.parentRunId ? `↳ child · depth ${run.depth}` : run.delegationMode;
+    button.innerHTML = `<span class="run-status" data-status="${run.status}"></span><span class="run-name"><strong>${escapeHtml(run.runId)}</strong><small>${escapeHtml(lineage)} · ${escapeHtml(run.status)} · ${run.events.length} event${run.events.length === 1 ? "" : "s"}</small></span><span class="event-count">${readableTime(run.events.at(-1)?.timestamp)}</span>`;
     button.addEventListener("click", () => {
       state.selectedRunId = run.runId;
       state.selectedEvent = null;
@@ -111,6 +125,33 @@ function renderRuns() {
     });
     elements.runList.append(button);
   }
+}
+
+function orderRunsByLineage(runs) {
+  const newestFirst = [...runs].sort((a, b) => (
+    (b.events.at(-1)?.timestamp || "").localeCompare(a.events.at(-1)?.timestamp || "")
+  ));
+  const knownIds = new Set(newestFirst.map((run) => run.runId));
+  const children = new Map();
+  for (const run of newestFirst) {
+    if (!run.parentRunId || !knownIds.has(run.parentRunId)) continue;
+    const siblings = children.get(run.parentRunId) || [];
+    siblings.push(run);
+    children.set(run.parentRunId, siblings);
+  }
+  const ordered = [];
+  const visited = new Set();
+  const append = (run) => {
+    if (visited.has(run.runId)) return;
+    visited.add(run.runId);
+    ordered.push(run);
+    for (const child of children.get(run.runId) || []) append(child);
+  };
+  for (const run of newestFirst) {
+    if (!run.parentRunId || !knownIds.has(run.parentRunId)) append(run);
+  }
+  for (const run of newestFirst) append(run);
+  return ordered;
 }
 
 function renderTimeline(options = {}) {
