@@ -116,7 +116,20 @@ function renderRuns() {
     if (run.parentRunId) button.style.setProperty("--lineage-indent", `${Math.min(Math.max(run.depth, 1), 4) * .8}rem`);
     button.setAttribute("aria-selected", String(run.runId === state.selectedRunId));
     const lineage = run.parentRunId ? `↳ child · depth ${run.depth}` : run.delegationMode;
-    button.innerHTML = `<span class="run-status" data-status="${run.status}"></span><span class="run-name"><strong>${escapeHtml(run.runId)}</strong><small>${escapeHtml(lineage)} · ${escapeHtml(run.status)} · ${run.events.length} event${run.events.length === 1 ? "" : "s"}</small></span><span class="event-count">${readableTime(run.events.at(-1)?.timestamp)}</span>`;
+    const status = document.createElement("span");
+    status.className = "run-status";
+    status.dataset.status = run.status;
+    const name = document.createElement("span");
+    name.className = "run-name";
+    const id = document.createElement("strong");
+    id.textContent = run.runId;
+    const detail = document.createElement("small");
+    detail.textContent = `${lineage} · ${run.status} · ${run.events.length} event${run.events.length === 1 ? "" : "s"}`;
+    name.append(id, detail);
+    const eventCount = document.createElement("span");
+    eventCount.className = "event-count";
+    eventCount.textContent = readableTime(run.events.at(-1)?.timestamp);
+    button.append(status, name, eventCount);
     button.addEventListener("click", () => {
       state.selectedRunId = run.runId;
       state.selectedEvent = null;

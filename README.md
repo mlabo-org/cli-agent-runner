@@ -189,7 +189,7 @@ Every `ownerScope` must be inside the top-level scope and pairwise non-overlappi
 
 ### Custom runners and state
 
-Runner configuration precedence is bundled defaults, user config, jobsite `.cli-agent-runner/runners.json`, `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`. See [`docs/runner-configuration.md`](docs/runner-configuration.md) for the schema and examples.
+Runner configuration precedence is bundled defaults, user config, `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`. Jobsite `.cli-agent-runner/` is workflow state only and is never loaded as executable runner configuration. See [`docs/runner-configuration.md`](docs/runner-configuration.md) for the schema and examples.
 
 Workflow state lives in the target Git repository's `.cli-agent-runner/` directory. The tool adds that directory to the target repository's local `.git/info/exclude`; it does not silently change the tracked `.gitignore`.
 
@@ -198,8 +198,8 @@ See [`docs/live-console.md`](docs/live-console.md) for the event, token, IAB han
 ### Security boundaries
 
 - Live Console binds to loopback and requires its generated token. Treat the full tokenized URL as sensitive local telemetry; do not paste it into commits, logs, issues, or remote messages.
-- Runner profiles execute local commands with their configured arguments and permissions. Review third-party runner JSON before use.
-- Machine scopes restrict repository paths; they do not replace the selected provider's own permission model.
+- Runner profiles execute local commands with their configured arguments and inherited environment. Treat third-party runner JSON as executable code, review it before use, and keep custom config outside worker-writable jobsites.
+- Machine scopes are fail-closed post-run Git change checks, not write containment. They do not see ignored or out-of-repository writes and do not replace the selected provider's own permission model or an OS sandbox.
 - Plugin source is authoritative. Never patch `~/.codex/plugins/cache/` directly.
 
 For vulnerability reports, see [`SECURITY.md`](SECURITY.md).
@@ -357,7 +357,7 @@ node bin/cli-agent-runner.mjs orchestrate \
 
 ### Custom runnerとstate
 
-runner設定の優先順位は、bundled defaults、user config、jobsiteの`.cli-agent-runner/runners.json`、`CLI_AGENT_RUNNER_CONFIG`、`--runner-config`です。schemaと例は[`docs/runner-configuration.md`](docs/runner-configuration.md)を参照してください。
+runner設定の優先順位は、bundled defaults、user config、`CLI_AGENT_RUNNER_CONFIG`、`--runner-config`です。jobsiteの`.cli-agent-runner/`はworkflow state専用で、実行可能なrunner設定として読み込みません。schemaと例は[`docs/runner-configuration.md`](docs/runner-configuration.md)を参照してください。
 
 workflow stateは対象Git repositoryの`.cli-agent-runner/`に置かれます。toolは対象repositoryのlocalな`.git/info/exclude`へこのdirectoryを追加し、tracked `.gitignore`を暗黙変更しません。
 
@@ -366,8 +366,8 @@ event、token、IAB handoff、parent-child lineageの契約は[`docs/live-consol
 ### セキュリティ境界
 
 - Live Consoleはloopbackへbindし、生成tokenを要求します。token付きURL全体をsensitiveなlocal telemetryとして扱い、commit、log、issue、remote messageへ貼らないでください。
-- runner profileは設定されたargumentと権限でlocal commandを実行します。third-party runner JSONは使用前に確認してください。
-- machine scopeはrepository pathを制限しますが、選択provider自身のpermission modelを置き換えません。
+- runner profileは設定されたargumentと継承environmentでlocal commandを実行します。third-party runner JSONは実行可能codeとして使用前に確認し、custom configはworkerが書き込めるjobsite外へ置いてください。
+- machine scopeはfail-closedな実行後Git変更検査であり、write containmentではありません。ignored pathやrepository外への書き込みは検出せず、選択provider自身のpermission modelやOS sandboxを置き換えません。
 - plugin sourceが正本です。`~/.codex/plugins/cache/`を直接patchしないでください。
 
 脆弱性報告は[`SECURITY.md`](SECURITY.md)を参照してください。
