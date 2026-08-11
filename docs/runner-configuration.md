@@ -26,6 +26,7 @@ Relative paths supplied by the environment variable or flag resolve from the inv
       "args": ["--approval-mode", "auto_edit", "--prompt", "{prompt}"],
       "prompt": "argument",
       "result": "stdout",
+      "stream": "text",
       "timeoutMs": 180000
     }
   }
@@ -38,6 +39,7 @@ Each runner supports these fields:
 - `args`: argument array. CLI Agent Runner never joins this into a shell command.
 - `prompt`: `argument` or `stdin`. Argument mode requires exactly one `{prompt}` placeholder; stdin mode forbids it.
 - `result`: `stdout`, `stderr`, or `output-file`. Output-file mode requires `{output_file}`.
+- `stream`: `text`, `ndjson`, or `messages-json`. It defaults to `text` for new custom profiles. `messages-json` reconstructs assistant text from Anthropic Messages text deltas for the existing stdout result contract.
 - `timeoutMs`: optional positive default timeout. `--timeout-ms` overrides it.
 - `description`: optional single-line description.
 
@@ -58,3 +60,5 @@ node bin/cli-agent-runner.mjs run \
 ```
 
 Use `--runner claude-cli` or `--runner grok-cli` for the bundled Claude and Grok profiles. Authentication remains owned by each installed CLI; keep credentials in the CLI's normal credential store or process environment rather than in runner JSON.
+
+To publish process activity to the built-in IAB viewer, use `run --runner <id> --live-console`; the command owns server startup, URL injection, completed-state retention, and signal-driven cleanup. The plugin skill opens the emitted viewer URL in Codex IAB. A separately managed `live-console` plus `--live-console-url <url>` remains available for advanced use. The executable still launches every profile through the same validated command-and-argument path; `stream` selects decoding behavior and does not introduce provider-ID branches.

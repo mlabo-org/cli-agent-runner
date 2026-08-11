@@ -209,7 +209,7 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      contract. They cannot broaden scope, depth, permissions, or cancellation
      authority.
 
-11. Configurable CLI runner registry
+11. Configurable CLI runner registry and Live Console
    - Standard runner profiles are `codex-cli`, `claude-cli`, and `grok-cli`.
      Their source-owned definitions live in `config/runners.default.json`; the
      process executor must not hard-code provider branches.
@@ -218,12 +218,37 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      config, jobsite `.cli-agent-runner/runners.json`,
      `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`.
    - A resolved profile consists of a direct executable, an argument array,
-     prompt transport, result source, and optional timeout. Supported argument
-     placeholders and config validity are enforced by
+     prompt transport, result source, stream format, and optional timeout.
+     Supported stream formats are `text`, `ndjson`, and `messages-json`.
+     Supported argument placeholders and config validity are enforced by
      `lib/runner-registry.mjs` and its contract tests.
-   - Runner commands are spawned directly without a shell, always use the
+   - Runner commands are spawned asynchronously without a shell, always use the
      jobsite as process cwd, inherit the current environment, and share the
-     existing scope guard and normalized `process-runner-result` path.
+     existing timeout, bounded-output, scope-guard, and normalized
+     `process-runner-result` path.
+   - Stream decoding is selected by the profile, never by a provider-ID branch.
+     The bundled Grok profile uses its Anthropic Messages-compatible streaming
+     JSON output and the `messages-json` adapter reconstructs assistant text for
+     the existing stdout result source.
+   - `live-console` starts a plugin-owned HTTP server bound to `127.0.0.1` and
+     prints a tokenized viewer URL suitable for Codex IAB. The server owns
+     authenticated ingest, snapshot and SSE delivery, static viewer assets, and
+     bounded ephemeral run history. It must not depend on AgentScope or private
+     Codex GUI IPC.
+   - `run --runner <id> --live-console` is the normal owned observation path.
+     It starts the secure server, injects its ingest URL, emits stable viewer and
+     completion markers, retains the final view, and closes the server after
+     SIGINT or SIGTERM. The parent plugin skill owns persistent-terminal launch,
+     supported IAB opening, completion observation, and controller cleanup.
+   - `run --runner <id> --live-console-url <url>` publishes a versioned,
+     provider-neutral envelope with `version`, `runId`, `sequence`, `timestamp`,
+     `type`, `stream`, `text`, and `data`. The parent Codex session owns opening
+     the printed localhost URL in IAB.
+     This remains an advanced external-console path and is mutually exclusive
+     with `--live-console`; the CLI must not use private Codex GUI IPC.
+   - Live Console transport is observation, not workflow state or artifact
+     acceptance. `.cli-agent-runner/runner.md` remains the durable result record;
+     a transport failure is reported separately from child execution status.
    - A process runner result records separate outcomes. `status` and `failure`
      belong only to execution and scope enforcement; `artifact_status` leaves
      artifact acceptance with the parent; `result_contract_status` and

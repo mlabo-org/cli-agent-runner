@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>CLI Agent Runner · Live Console</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="console-shell" aria-label="CLI Agent Runner live console">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">CLI Agent Runner</p>
+          <h1>Live Console</h1>
+        </div>
+        <div class="connection" id="connection" role="status" aria-live="polite" data-state="connecting">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connection-label">Connecting</span>
+        </div>
+      </header>
+
+      <div class="console-grid">
+        <aside class="panel run-panel" aria-label="Runs">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Runs</p>
+              <h2>Activity streams</h2>
+            </div>
+            <span class="count" id="run-count">0</span>
+          </div>
+          <div class="run-list" id="run-list" role="listbox" aria-label="Select a run"></div>
+          <div class="empty-state compact" id="run-empty">
+            <strong>No runs yet</strong>
+            <span>New runner activity will appear here.</span>
+          </div>
+        </aside>
+
+        <section class="panel timeline-panel" aria-label="Activity timeline">
+          <div class="panel-heading timeline-heading">
+            <div>
+              <p class="eyebrow">Timeline</p>
+              <h2 id="timeline-title">Select a run</h2>
+            </div>
+            <button class="pause-button" id="pause-button" type="button" aria-pressed="false" disabled>Pause</button>
+          </div>
+          <div class="timeline" id="timeline" tabindex="0" aria-live="polite" aria-label="Chronological activity"></div>
+          <div class="empty-state timeline-empty" id="timeline-empty">
+            <strong>Waiting for activity</strong>
+            <span>Choose a run, then its process events will stream here in sequence.</span>
+          </div>
+        </section>
+
+        <aside class="panel details-panel" aria-label="Selected event details">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Inspection</p>
+              <h2>Event detail</h2>
+            </div>
+          </div>
+          <div class="event-summary" id="event-summary">Select an event to inspect its complete envelope.</div>
+          <div class="detail-tabs" role="tablist" aria-label="Event detail format">
+            <button class="detail-tab is-active" id="structured-tab" type="button" role="tab" aria-selected="true" aria-controls="structured-payload">Structured</button>
+            <button class="detail-tab" id="raw-tab" type="button" role="tab" aria-selected="false" aria-controls="raw-payload">Raw</button>
+          </div>
+          <pre class="payload" id="structured-payload" role="tabpanel" aria-labelledby="structured-tab">No event selected.</pre>
+          <pre class="payload" id="raw-payload" role="tabpanel" aria-labelledby="raw-tab" hidden>No event selected.</pre>
+        </aside>
+      </div>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
