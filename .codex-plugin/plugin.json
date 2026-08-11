@@ -1,0 +1,37 @@
+{
+  "name": "cli-agent-runner",
+  "version": "0.1.0",
+  "description": "Launch scoped Codex CLI workers with codex exec, capture stdout/stderr and final messages, and record normalized process-runner-result packets in .cli-agent-runner. Trigger on CLI Agent Runner, CLI subagent execution, or continuation of its workflow state. Primary route: explicit run/orchestrate --runner codex-cli. Non-use: generic coding and ordinary official-subagent work.",
+  "skills": "./skills/",
+  "keywords": [
+    "cli-agent-runner",
+    ".cli-agent-runner",
+    "codex-cli",
+    "codex-exec",
+    "cli-subagent",
+    "process-runner-result",
+    "stdout-stderr",
+    "cli-agent-runner-continuation"
+  ],
+  "interface": {
+    "displayName": "CLI Agent Runner",
+    "shortDescription": "Launch scoped Codex CLI workers and normalize their process results.",
+    "longDescription": "CLI Agent Runner is an explicit process-runner workflow for scoped Codex CLI workers. Its codex-cli route invokes codex exec, captures stdout/stderr plus the final message, enforces a machine-checkable repository scope, and records a process-runner-result packet under .cli-agent-runner. It does not replace generic coding or ordinary official-subagent routing, and this initial independent release supports only the codex-cli provider.",
+    "developerName": "suzukimakoto",
+    "category": "Productivity",
+    "capabilities": [
+      "Codex CLI Worker Launch",
+      "stdout/stderr And Final-Message Capture",
+      "Normalized Process Runner Results",
+      "Machine-Checkable Scope Guard"
+    ],
+    "defaultPrompt": [
+      "Use CLI Agent Runner to launch a scoped Codex CLI worker and return its process-runner-result.",
+      "Continue this .cli-agent-runner task with the next codex-cli assignment."
+    ],
+    "brandColor": "#2563EB"
+  },
+  "author": {
+    "name": "Local developer"
+  }
+}
