@@ -54,7 +54,7 @@ const META_ARGS = [
 ];
 
 function contractCoverageArgs(taskId) {
-  const decisions = Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
+  const decisions = Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
   const completions = Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}`);
   const refs = [
     "file:bin/cli-agent-runner.mjs",
@@ -108,7 +108,7 @@ test("intake makes the metacognitive gate visible and verifiable for gate-requir
     assert.match(assignments, /metacognitive_gate_required: true/);
     assert.match(assignments, /metacognitive_gate_fields: .*expected_outcome/);
     assert.match(assignments, /metacognitive_gate_fields: .*cross_feature_consequences/);
-    assert.doesNotMatch(getRoleSection(assignments, "Intake"), /^- root_cause:/m);
+    assert.doesNotMatch(assignments, /^- root_cause:/m);
 
     assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
     assert.equal(runCli(["doctor", "--target-cwd", repo]).status, 0);
@@ -402,7 +402,7 @@ test("collect permits worker completion without global coverage and finalize enf
       "--contract-coverage",
       "required",
       "--decision-coverage",
-      Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}: done`).join(" | "),
+      Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}: done`).join(" | "),
       "--completion-coverage",
       Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}: done`).join(" | "),
       "--source-spec-coverage",
@@ -1000,12 +1000,14 @@ test("normalization recovers stale pre-gate state without faking completed evide
     assert.match(normalized.stdout, /Updated: assignments.md/);
     assert.match(normalized.stdout, /Updated: runner.md/);
 
-    assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
-    assert.equal(runCli(["doctor", "--target-cwd", repo]).status, 0);
+    const normalizedVerify = runCli(["verify-assignments", "--target-cwd", repo]);
+    assert.equal(normalizedVerify.status, 0, normalizedVerify.stdout + normalizedVerify.stderr);
+    const normalizedDoctor = runCli(["doctor", "--target-cwd", repo]);
+    assert.equal(normalizedDoctor.status, 0, normalizedDoctor.stdout + normalizedDoctor.stderr);
 
     const normalizedAssignments = readState(repo, "assignments.md");
-    assert.match(getRoleSection(normalizedAssignments, "Implementer"), /metacognitive_gate_fields: .*root_cause/);
-    assert.doesNotMatch(getRoleSection(normalizedAssignments, "Implementer"), /^- root_cause:/m);
+    assert.match(normalizedAssignments, /metacognitive_gate_fields: .*root_cause/);
+    assert.doesNotMatch(normalizedAssignments, /^- root_cause:/m);
 
     const normalizedRunner = readState(repo, "runner.md");
     assert.match(normalizedRunner, /status: unresolved/);
@@ -1383,15 +1385,6 @@ function staleActivePreamble(file) {
 `;
 }
 
-function getRoleSection(text, role) {
-  const startMatch = new RegExp(`^## ${escapeRegExp(role)}$`, "m").exec(text);
-  if (!startMatch) return "";
-  const start = startMatch.index;
-  const next = text.slice(start + startMatch[0].length).search(/^## /m);
-  if (next === -1) return text.slice(start);
-  return text.slice(start, start + startMatch[0].length + next);
-}
-
 function staleRunner(taskId) {
   return `# CLI Agent Runner Runner
 
@@ -1493,8 +1486,4 @@ function stripMetacognitiveLines(text) {
       return !metaFields.some((field) => line.startsWith(`- ${field}:`));
     })
     .join("\n");
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
