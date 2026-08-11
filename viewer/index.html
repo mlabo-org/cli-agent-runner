@@ -42,9 +42,19 @@
               <p class="eyebrow">Timeline</p>
               <h2 id="timeline-title">Select a run</h2>
             </div>
-            <button class="pause-button" id="pause-button" type="button" aria-pressed="false" disabled>Pause</button>
           </div>
-          <div class="timeline" id="timeline" tabindex="0" aria-live="polite" aria-label="Chronological activity"></div>
+          <div class="timeline-toolbar" aria-label="Timeline controls">
+            <div class="timeline-stats" id="timeline-stats" role="status" aria-live="polite">0 events</div>
+            <div class="timeline-actions">
+              <div class="filter-control" role="group" aria-label="Filter timeline events">
+                <button class="filter-button is-active" type="button" data-filter="all" aria-pressed="true">All</button>
+                <button class="filter-button" type="button" data-filter="signal" aria-pressed="false">Signal</button>
+                <button class="filter-button" type="button" data-filter="errors" aria-pressed="false">Errors</button>
+              </div>
+              <button class="follow-button" id="follow-button" type="button" aria-pressed="true" disabled>Following latest</button>
+            </div>
+          </div>
+          <div class="timeline" id="timeline" tabindex="0" aria-label="Chronological activity"></div>
           <div class="empty-state timeline-empty" id="timeline-empty">
             <strong>Waiting for activity</strong>
             <span>Choose a run, then its process events will stream here in sequence.</span>
