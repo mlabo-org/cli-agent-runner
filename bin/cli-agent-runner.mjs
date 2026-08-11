@@ -64,6 +64,14 @@ const WORKER_FINALIZATION_REFERENCE_PROMPT =
   `Return concise typed references relevant to this worker result for parent finalization (${CONTRACT_COVERAGE_TYPED_REFERENCE_FORMS}); the parent owns complete D-*/C-*/source-spec coverage.`;
 const NESTED_CLI_AGENT_RUNNER_PREFLIGHT =
   "Parent already selected CLI Agent Runner for this parent-managed scoped assignment; do not ask `cli-agent-runner を使いますか？ [Y/n]` and do not start an independent nested CLI Agent Runner workflow. Delegate descendants only when finite hierarchy fields grant remaining_depth > 0, keeping the same task_id/epoch/scope lineage and inherited supervision. Proceed directly within the assigned task_id/epoch/scope, but stop before scope expansion, destructive operations, external sending, commits, cache refresh, plugin activation, or unrelated edits.";
+const HIERARCHY_PERMISSION_CONTRACT =
+  "Hierarchy fields are the parent-owned maximum permission ceiling, not an instruction to delegate. When remaining_depth is greater than zero, the assigned worker decides whether descendants materially help the assignment; when it is zero, descendants are forbidden.";
+const HIERARCHY_OVERRIDE_REASON_IDS = [
+  "user_request",
+  "safety_boundary",
+  "scope_boundary",
+  "capability_boundary",
+];
 const SUPERVISION_CONTRACT_NAME = "Subagent Supervision Contract";
 const SUPERVISION_HEARTBEAT =
   "Silence before heartbeat deadline is neutral, not failure. Heartbeat is telemetry, not completion evidence.";
@@ -103,6 +111,11 @@ const DEFAULT_HIERARCHY_FIELDS = {
   max_depth: "0",
   depth: "0",
   remaining_depth: "0",
+};
+const DEFAULT_HIERARCHY_PERMISSION_FIELDS = {
+  hierarchy_permission_source: "workflow_default",
+  hierarchy_override_reason: "none",
+  hierarchy_permission_contract: HIERARCHY_PERMISSION_CONTRACT,
 };
 const DEFAULT_SUPERVISION_TIMING_FIELDS = {
   heartbeat_interval: "PT15M",
@@ -673,6 +686,7 @@ function normalizeRunnerResult(packet, context) {
     featureProfile: packet.featureProfile,
     workType: packet.workType,
     hierarchyFields: packet.hierarchyFields,
+    hierarchyPermissionFields: packet.hierarchyPermissionFields,
     supervisionTimingFields: packet.supervisionTimingFields,
     invocationCwd: packet.invocationCwd,
     targetCwd: packet.targetCwd,
@@ -1831,6 +1845,7 @@ function requireAssignmentPacket(args, commandContext) {
     featureProfile: resolveFeatureProfile(args.featureProfile),
     workType: commandContext.workType,
     hierarchyFields: resolveHierarchyFields(args),
+    hierarchyPermissionFields: resolveHierarchyPermissionFields(args),
     supervisionTimingFields: resolveSupervisionTimingFields(args),
     invocationCwd: commandContext.invocationCwd,
     targetCwd: commandContext.targetCwd,
@@ -3568,6 +3583,7 @@ ${renderSupervisionFields()}`;
 
 function renderSupervisionFields(source = {}) {
   const hierarchyFields = source?.hierarchyFields || DEFAULT_HIERARCHY_FIELDS;
+  const hierarchyPermissionFields = source?.hierarchyPermissionFields || DEFAULT_HIERARCHY_PERMISSION_FIELDS;
   const supervisionTimingFields = source?.supervisionTimingFields || DEFAULT_SUPERVISION_TIMING_FIELDS;
   return `- supervision_contract: ${SUPERVISION_CONTRACT_NAME}
 - supervision_heartbeat: ${SUPERVISION_HEARTBEAT}
@@ -3576,6 +3592,7 @@ function renderSupervisionFields(source = {}) {
 - supervision_retire_cancel_reasons: ${SUPERVISION_RETIRE_CANCEL_REASONS.join(", ")}
 - supervision_stale_timeout_path: ${SUPERVISION_STALE_TIMEOUT_PATH}
 - supervision_descendants: ${SUPERVISION_DESCENDANTS}
+${renderFieldLines(hierarchyPermissionFields)}
 ${renderFieldLines(hierarchyFields)}
 ${renderFieldLines(supervisionTimingFields)}`;
 }
@@ -3918,22 +3935,102 @@ function resolveHierarchyFields(args = {}) {
 }
 
 function applyRunnerHierarchyDefaults(args, profile) {
-  const explicitHierarchy = ["hierarchyMode", "maxDepth", "depth", "remainingDepth"]
-    .some((field) => args[field] !== undefined);
-  if (explicitHierarchy || profile?.defaultHierarchyDepth === undefined) return args;
+  const explicitHierarchy = hasExplicitHierarchyFields(args);
+  const profileDepth = profile?.defaultHierarchyDepth;
 
-  const maxDepth = profile.defaultHierarchyDepth;
+  if (profileDepth === undefined) {
+    if (args.hierarchyOverrideReason !== undefined) {
+      throw new CliError(
+        "--hierarchy-override-reason requires a selected runner profile with defaultHierarchyDepth",
+        1,
+      );
+    }
+    return {
+      ...args,
+      hierarchyPermissionSource: explicitHierarchy ? "parent_selected_ceiling" : "workflow_default",
+      hierarchyOverrideReason: "none",
+    };
+  }
+
+  const profileArgs = hierarchyArgsForMaxDepth(profileDepth);
+  if (!explicitHierarchy) {
+    if (args.hierarchyOverrideReason !== undefined) {
+      throw new CliError(
+        "--hierarchy-override-reason requires explicit hierarchy fields that replace the runner profile default",
+        1,
+      );
+    }
+    return {
+      ...args,
+      ...profileArgs,
+      hierarchyPermissionSource: "runner_profile_default",
+      hierarchyOverrideReason: "none",
+    };
+  }
+
+  const requestedFields = resolveHierarchyFields(args);
+  const profileFields = resolveHierarchyFields(profileArgs);
+  const replacesProfileDefault = HIERARCHY_FIELD_NAMES.some(
+    (field) => requestedFields[field] !== profileFields[field],
+  );
+
+  if (!replacesProfileDefault) {
+    if (args.hierarchyOverrideReason !== undefined) {
+      throw new CliError(
+        "--hierarchy-override-reason was supplied but the explicit hierarchy equals the runner profile default",
+        1,
+      );
+    }
+    return {
+      ...args,
+      hierarchyPermissionSource: "runner_profile_default",
+      hierarchyOverrideReason: "none",
+    };
+  }
+
+  return {
+    ...args,
+    hierarchyPermissionSource: "reasoned_explicit_override",
+    hierarchyOverrideReason: requireHierarchyOverrideReason(args.hierarchyOverrideReason),
+  };
+}
+
+function hasExplicitHierarchyFields(args = {}) {
+  return ["hierarchyMode", "maxDepth", "depth", "remainingDepth"]
+    .some((field) => args[field] !== undefined);
+}
+
+function hierarchyArgsForMaxDepth(maxDepth) {
   const hierarchyMode = maxDepth === 0
     ? "none"
     : maxDepth === 1
       ? "one_level"
       : "n_level";
   return {
-    ...args,
     hierarchyMode,
     maxDepth: String(maxDepth),
     depth: "0",
     remainingDepth: String(maxDepth),
+  };
+}
+
+function requireHierarchyOverrideReason(value) {
+  const reason = singleLine(value || "");
+  if (!HIERARCHY_OVERRIDE_REASON_IDS.includes(reason)) {
+    throw new CliError(
+      `runner profile hierarchy override requires --hierarchy-override-reason ${HIERARCHY_OVERRIDE_REASON_IDS.join("|")}`,
+      1,
+    );
+  }
+  return reason;
+}
+
+function resolveHierarchyPermissionFields(args = {}) {
+  return {
+    hierarchy_permission_source: args.hierarchyPermissionSource
+      || (hasExplicitHierarchyFields(args) ? "parent_selected_ceiling" : "workflow_default"),
+    hierarchy_override_reason: args.hierarchyOverrideReason || "none",
+    hierarchy_permission_contract: HIERARCHY_PERMISSION_CONTRACT,
   };
 }
 
@@ -4052,7 +4149,7 @@ Usage:
   node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
   node bin/cli-agent-runner.mjs collect [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] --status <status> --lifecycle-disposition state_retired|continuation_expected [--cancel-reason <allowed-reason>] [--findings <text>] [--changed-files <text>] [--verification <text>] [--blockers <text>] [--assumptions <text>] [--next <text>] [--finalization-references <typed-refs>] [--expected-outcome <text>] [--actual-result <text>] [--reproduction-or-evidence <text>] [--failure-point <text>] [--hypothesis-branches <text>] [--source-of-truth-boundary <text>] [--plugin-contract-boundary <text>] [--generated-artifact-boundary <text>] [--before-context-effects <text>] [--after-context-effects <text>] [--cross-feature-consequences <text>] [--root-cause <text>] [--fix-summary <text>] [--verification-evidence <text>] [--skipped-checks <text>] [--unresolved-risks <text>] [--next-investigation <text>]
   node bin/cli-agent-runner.mjs finalize [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--contract-coverage required] --decision-coverage <text> --completion-coverage <text> --source-spec-coverage <text>
-  node bin/cli-agent-runner.mjs run|orchestrate [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs run|orchestrate [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs live-console [--port <0-65535>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
   node bin/cli-agent-runner.mjs normalize-debugging-integrity [--cwd <path>] [--target-cwd <path>] [--execute]
@@ -4094,7 +4191,7 @@ State:
   Optional --work-type is semantic command metadata. Known ids: ${knownWorkTypeIds().join(", ")}.
   --work-type auto preserves keyword/path inference. --work-type source-change and --work-type debug force the metacognitive gate for that command.
   --work-type documentation suppresses keyword/path gate inference for that command only; it does not replace debug/root-cause gates and cannot downgrade existing gate-required workflow state.
-  Optional hierarchy and supervision timing flags are packet metadata. Bundled grok-cli runs that omit all hierarchy flags default to hierarchy_mode one_level, max_depth 1, depth 0, and remaining_depth 1. Other bundled runners default to hierarchy_mode none with zero depth. Any explicit hierarchy flag overrides a runner-profile default. Supervision timing defaults are heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
+  Hierarchy fields are the parent-owned maximum permission ceiling; they do not require the assigned worker to delegate. A worker with remaining_depth greater than zero decides whether descendants materially help. Any runner profile may declare defaultHierarchyDepth. Replacing that default with explicit hierarchy fields requires --hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary and is rejected before state append or process launch otherwise. Bundled grok-cli defaults to hierarchy_mode one_level, max_depth 1, depth 0, and remaining_depth 1; bundled Codex and Claude retain the workflow zero-depth default. Supervision timing defaults are heartbeat_interval PT15M, heartbeat_deadline PT30M, max_silence PT45M, soft_timeout PT60M, hard_timeout PT120M, and no_interrupt_until PT30M.
   Bundled runner ids are codex-cli, claude-cli, and grok-cli. Additional ids can be added through runner JSON without source edits.
   Runner config precedence is bundled defaults, user config, jobsite .cli-agent-runner/runners.json, CLI_AGENT_RUNNER_CONFIG, then --runner-config.
   With --runner <id>, --scope must be machine-checkable before runner.md is appended or the process launches.

@@ -214,6 +214,10 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
         assert.match(prompt, /- max_depth: 1/);
         assert.match(prompt, /- depth: 0/);
         assert.match(prompt, /- remaining_depth: 1/);
+        assert.match(prompt, /- hierarchy_permission_source: runner_profile_default/);
+        assert.match(prompt, /- hierarchy_override_reason: none/);
+        assert.match(prompt, /maximum permission ceiling, not an instruction to delegate/);
+        assert.match(prompt, /assigned worker decides whether descendants materially help/);
       } else {
         assert.match(prompt, /- hierarchy_mode: none/);
         assert.match(prompt, /- remaining_depth: 0/);
@@ -231,7 +235,7 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
   }
 });
 
-test("explicit hierarchy flags override the bundled Grok profile default", () => {
+test("unreasoned explicit hierarchy flags cannot replace a runner profile default", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-grok-"));
   const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
@@ -245,6 +249,31 @@ test("explicit hierarchy flags override the bundled Grok profile default", () =>
       CLI_AGENT_RUNNER_CAPTURE: capturePath,
     }, ["--hierarchy-mode", "none"]);
 
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /runner profile hierarchy override requires --hierarchy-override-reason/);
+    assert.equal(existsSync(capturePath), false);
+    assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+    rmSync(configHome, { recursive: true, force: true });
+  }
+});
+
+test("reasoned hierarchy override replaces a runner profile permission ceiling", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-grok-"));
+  const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+  const capturePath = path.join(fakeBin, "args.json");
+  try {
+    intake(repo, "grok-reasoned-no-descendants");
+    installFakeRunner(fakeBin, "grok");
+    const result = runWorker(repo, "grok-reasoned-no-descendants", "grok-cli", {
+      ...isolatedEnvironment(configHome),
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+      CLI_AGENT_RUNNER_CAPTURE: capturePath,
+    }, ["--hierarchy-mode", "none", "--hierarchy-override-reason", "user_request"]);
+
     assert.equal(result.status, 0, result.stderr);
     const args = JSON.parse(readFileSync(capturePath, "utf8"));
     const prompt = args.find((argument) => argument.includes("You are a CLI Agent Runner child worker"));
@@ -252,9 +281,61 @@ test("explicit hierarchy flags override the bundled Grok profile default", () =>
     assert.match(prompt, /- hierarchy_mode: none/);
     assert.match(prompt, /- max_depth: 0/);
     assert.match(prompt, /- remaining_depth: 0/);
+    assert.match(prompt, /- hierarchy_permission_source: reasoned_explicit_override/);
+    assert.match(prompt, /- hierarchy_override_reason: user_request/);
     const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
     assert.match(runner, /runner: grok-cli/);
     assert.match(runner, /hierarchy_mode: none/);
+    assert.match(runner, /hierarchy_permission_source: reasoned_explicit_override/);
+    assert.match(runner, /hierarchy_override_reason: user_request/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+    rmSync(configHome, { recursive: true, force: true });
+  }
+});
+
+test("custom runner profile hierarchy defaults use the same override guard", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-custom-default-"));
+  const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+  try {
+    intake(repo, "custom-profile-default-guard");
+    installFakeRunner(fakeBin, "custom-agent");
+    writeJson(path.join(repo, ".cli-agent-runner", "runners.json"), {
+      version: 1,
+      runners: {
+        "custom-default": {
+          command: "custom-agent",
+          args: ["{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+          defaultHierarchyDepth: 2,
+        },
+      },
+    });
+    const environment = {
+      ...isolatedEnvironment(configHome),
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+    };
+
+    const defaultRun = runWorker(repo, "custom-profile-default-guard", "custom-default", environment);
+    assert.equal(defaultRun.status, 0, defaultRun.stderr);
+    const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
+    assert.match(runner, /runner: custom-default/);
+    assert.match(runner, /hierarchy_mode: n_level/);
+    assert.match(runner, /max_depth: 2/);
+    assert.match(runner, /hierarchy_permission_source: runner_profile_default/);
+
+    const rejectedOverride = runWorker(
+      repo,
+      "custom-profile-default-guard",
+      "custom-default",
+      environment,
+      ["--hierarchy-mode", "none"],
+    );
+    assert.notEqual(rejectedOverride.status, 0);
+    assert.match(rejectedOverride.stderr, /runner profile hierarchy override requires --hierarchy-override-reason/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });
