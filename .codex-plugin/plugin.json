@@ -1,7 +1,7 @@
 {
   "name": "cli-agent-runner",
   "version": "0.3.0",
-  "description": "Run scoped Grok, Claude, Codex, or custom CLI workers with CLI Agent Runner and its default-on Codex IAB Live Console, started before workers. Trigger on CLI Agent Runner, Live Console, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; explicit silent/no-console requests are the only OFF path; excludes generic coding and ordinary official subagents.",
+  "description": "Run scoped Grok, Claude, Codex, or custom CLI workers with CLI Agent Runner: run one worker or orchestrate parent-declared independent leaf jobs in parallel, sharing its default-on Codex IAB Live Console. Trigger on CLI Agent Runner, Live Console, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; explicit silent/no-console requests are the only OFF path; excludes generic coding and ordinary official subagents.",
   "skills": "./skills/",
   "keywords": [
     "cli-agent-runner",
@@ -16,12 +16,14 @@
     "stdout-stderr",
     "iab-live-console",
     "runner-streaming",
+    "parallel-leaf-orchestration",
+    "jobs-file",
     "cli-agent-runner-continuation"
   ],
   "interface": {
     "displayName": "CLI Agent Runner",
-    "shortDescription": "Run scoped CLI workers with a default-on IAB Live Console.",
-    "longDescription": "CLI Agent Runner is an explicit process-runner workflow for scoped CLI workers. It bundles Codex, Claude, and Grok profiles, accepts additional or overridden profiles from runner JSON, invokes every profile through one validated command-and-arguments path, and lets profiles declare a protected descendant permission ceiling. The parent owns that maximum depth, the assigned worker decides whether delegation is useful, and changing a declared profile default requires an admitted user, safety, scope, or capability reason. Bundled Grok permits direct children by default; Codex and Claude retain zero descendant depth. It starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation, keeps it alive across user-confirmation pauses, restores or reopens it before resuming, streams emitted stdout/stderr or structured messages into it, and enforces a machine-checkable repository scope. An exit-zero in-scope run records one minimal completed process result and stops without a follow-up collection, finalization, or validator chain. Direct runner commands also own a console by default; only explicit silent or no-console selection disables it. It does not replace generic coding or ordinary official-subagent routing.",
+    "shortDescription": "Run one worker or parallel independent leaf jobs with a default-on IAB Live Console.",
+    "longDescription": "CLI Agent Runner is an explicit process-runner workflow for scoped CLI workers. `run --runner <id>` launches exactly one worker; `orchestrate --runner <id> --jobs-file <json>` concurrently launches parent-declared independent leaf jobs from a version-1 jobs file. The parent first derives human responsibility owners and their dependency graph, then splits only workstreams with stable handoffs and non-overlapping writable scopes when that materially reduces elapsed time; tightly coupled work remains with one owner. A hierarchy permission ceiling controls descendants only and never substitutes for sibling-job dispatch. It bundles Codex, Claude, and Grok profiles, accepts additional or overridden profiles from runner JSON, and invokes every profile through one validated command-and-arguments path. It starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation, keeps it alive across user-confirmation pauses, restores or reopens it before resuming, streams emitted stdout/stderr or structured messages, and shares it across all jobs with per-job run IDs. It enforces a machine-checkable repository scope. A successful run or orchestration records its minimal completed result and stops without a follow-up collection, finalization, reviewer, or validator chain. Direct runner commands also own a console by default; only explicit silent or no-console selection disables it. It does not replace generic coding or ordinary official-subagent routing.",
     "developerName": "suzukimakoto",
     "category": "Productivity",
     "capabilities": [
@@ -32,12 +34,13 @@
       "Live Console Continuity Across User-Input Pauses",
       "Provider-Neutral Text And JSON Event Streaming",
       "Protected Runner-Profile Delegation Ceilings",
+      "Parallel Independent Leaf-Job Orchestration",
       "Terminal Minimal Result For Successful Runs",
       "Machine-Checkable Scope Guard"
     ],
     "defaultPrompt": [
-      "Use CLI Agent Runner: open Live Console before project work, then launch a scoped Codex, Claude, Grok, or configured CLI worker.",
-      "Start CLI Agent Runner Live Console in Codex IAB first, keep it standing by, and later stream a scoped Grok worker into it.",
+      "Use CLI Agent Runner: open Live Console, then run one worker or orchestrate independent leaf jobs.",
+      "Start CLI Agent Runner Live Console in Codex IAB, then orchestrate independent Grok leaf jobs through the shared viewer.",
       "Add or use a custom CLI runner from JSON for this .cli-agent-runner task."
     ],
     "brandColor": "#2563EB"

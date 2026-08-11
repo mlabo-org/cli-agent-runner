@@ -1040,7 +1040,7 @@ test("valid feature profile renders in assignment, collect, and run skeleton pac
     assert.match(collected.stdout, /ok feature_profile: debug\.reproducer/);
 
     const run = runCli([
-      "orchestrate",
+      "run",
       "--target-cwd",
       repo,
       "--role",
@@ -1944,6 +1944,140 @@ test("codex-cli runner accepts explicit scope:v1 paths grammar", () => {
   }
 });
 
+test("orchestrate launches independent jobs in parallel and records every result in jobs-file order", () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-orchestrate-"));
+  try {
+    const taskScope = "scope:v1 paths=alpha/,beta/";
+    intake(repo, { taskId: "parallel-jobs", epoch: "e1", scope: taskScope, workType: "documentation" });
+    const configPath = installOrchestrationFixture(controlDir, 500);
+    const jobsPath = writeJobsFile(controlDir, [
+      {
+        id: "alpha-job",
+        role: "Implementer",
+        ownerScope: "scope:v1 paths=alpha/",
+        assignment: "Write the alpha result",
+        expectedOutput: "alpha/result.txt",
+      },
+      {
+        id: "beta-job",
+        role: "Test Runner",
+        ownerScope: "scope:v1 paths=beta/",
+        assignment: "Write the beta result",
+        expectedOutput: "beta/result.txt",
+      },
+    ]);
+
+    const startedAt = Date.now();
+    const run = runCli([
+      "orchestrate",
+      "--target-cwd", repo,
+      "--task-id", "parallel-jobs",
+      "--epoch", "e1",
+      "--scope", taskScope,
+      "--work-type", "documentation",
+      "--runner", "parallel-fixture",
+      "--runner-config", configPath,
+      "--jobs-file", jobsPath,
+    ]);
+    const elapsedMs = Date.now() - startedAt;
+
+    assert.equal(run.status, 0, run.stderr);
+    assert.ok(elapsedMs < 900, `expected two 500ms jobs to overlap; elapsed ${elapsedMs}ms`);
+    assert.equal(readFileSync(path.join(repo, "alpha", "result.txt"), "utf8"), "alpha-job\n");
+    assert.equal(readFileSync(path.join(repo, "beta", "result.txt"), "utf8"), "beta-job\n");
+    const runner = readState(repo, "runner.md");
+    assert.equal([...runner.matchAll(/- type: assignment/g)].length, 2);
+    assert.equal([...runner.matchAll(/- type: process-runner-result/g)].length, 2);
+    assert.ok(runner.indexOf("- job_id: alpha-job") < runner.indexOf("- job_id: beta-job"));
+    assert.match(run.stdout, /ok orchestrated_jobs: 2/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
+test("orchestrate rejects overlapping owner scopes before launch or state append", () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-orchestrate-"));
+  try {
+    const taskScope = "scope:v1 paths=src/";
+    intake(repo, { taskId: "overlap-jobs", epoch: "e1", scope: taskScope, workType: "documentation" });
+    const configPath = installOrchestrationFixture(controlDir, 10);
+    const jobsPath = writeJobsFile(controlDir, [
+      { id: "src", role: "Implementer", ownerScope: "src/", assignment: "Own src", expectedOutput: "src output" },
+      { id: "nested", role: "Test Runner", ownerScope: "src/nested/", assignment: "Own nested", expectedOutput: "nested output" },
+    ]);
+
+    const run = runCli([
+      "orchestrate", "--target-cwd", repo,
+      "--task-id", "overlap-jobs", "--epoch", "e1", "--scope", taskScope,
+      "--work-type", "documentation", "--runner", "parallel-fixture",
+      "--runner-config", configPath, "--jobs-file", jobsPath,
+    ]);
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /ownerScope values overlap/);
+    assert.equal(existsSync(path.join(repo, "launched.txt")), false);
+    assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
+test("orchestrate rejects an owner scope outside the top-level task scope before launch", () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-orchestrate-"));
+  try {
+    const taskScope = "scope:v1 paths=allowed/";
+    intake(repo, { taskId: "outside-job", epoch: "e1", scope: taskScope, workType: "documentation" });
+    const configPath = installOrchestrationFixture(controlDir, 10);
+    const jobsPath = writeJobsFile(controlDir, [
+      { id: "outside", role: "Implementer", ownerScope: "outside/", assignment: "Own outside", expectedOutput: "outside output" },
+    ]);
+
+    const run = runCli([
+      "orchestrate", "--target-cwd", repo,
+      "--task-id", "outside-job", "--epoch", "e1", "--scope", taskScope,
+      "--work-type", "documentation", "--runner", "parallel-fixture",
+      "--runner-config", configPath, "--jobs-file", jobsPath,
+    ]);
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /outside top-level task scope/);
+    assert.equal(existsSync(path.join(repo, "launched.txt")), false);
+    assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
+test("run remains a single-worker command", () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-run-single-"));
+  try {
+    intake(repo, { taskId: "single-run", epoch: "e1", scope: "scope:v1 all", workType: "documentation" });
+    const configPath = installOrchestrationFixture(controlDir, 10);
+    const run = runCli([
+      "run", "--target-cwd", repo,
+      "--role", "Implementer", "--task-id", "single-run", "--epoch", "e1",
+      "--scope", "scope:v1 all", "--work-type", "documentation",
+      "--assignment", "Run exactly one fixture", "--expected-output", "one result",
+      "--runner", "parallel-fixture", "--runner-config", configPath,
+    ]);
+
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal([...readState(repo, "runner.md").matchAll(/- type: process-runner-result/g)].length, 1);
+    assert.match(run.stdout, /ok runner: parallel-fixture/);
+    assert.doesNotMatch(run.stdout, /orchestrated_jobs/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
 test("codex-cli runner accepts explicit scope:v1 all grammar as whole repo", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
@@ -2398,6 +2532,43 @@ ${extraBody}
 process.stdout.write("fake codex completed\\n");
 `, "utf8");
   chmodSync(fakeCodex, 0o755);
+}
+
+function installOrchestrationFixture(controlDir, delayMs) {
+  const configPath = path.join(controlDir, "runners.json");
+  const program = `
+const { mkdirSync, writeFileSync } = require("node:fs");
+const prompt = process.argv[1] || "";
+const jobId = /^job_id: (.+)$/m.exec(prompt)?.[1] || "single-run";
+const ownerScope = /^owner_scope: (.+)$/m.exec(prompt)?.[1] || "";
+const ownerPath = ownerScope.replace(/^scope:v1 paths=/, "").replace(/\\\/$/, "");
+setTimeout(() => {
+  if (ownerPath) {
+    mkdirSync(ownerPath, { recursive: true });
+    writeFileSync(ownerPath + "/result.txt", jobId + "\\n", "utf8");
+  }
+  process.stdout.write(jobId + " completed\\n");
+}, ${delayMs});
+`;
+  writeFileSync(configPath, JSON.stringify({
+    version: 1,
+    runners: {
+      "parallel-fixture": {
+        command: process.execPath,
+        args: ["-e", program, "{prompt}"],
+        prompt: "argument",
+        result: "stdout",
+        stream: "text",
+      },
+    },
+  }, null, 2));
+  return configPath;
+}
+
+function writeJobsFile(controlDir, jobs) {
+  const jobsPath = path.join(controlDir, `jobs-${Date.now()}-${Math.random().toString(16).slice(2)}.json`);
+  writeFileSync(jobsPath, JSON.stringify({ version: 1, jobs }, null, 2));
+  return jobsPath;
 }
 
 function pathWithFakeCodex(fakeBin) {
