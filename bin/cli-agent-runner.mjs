@@ -304,7 +304,7 @@ function parseArgs(argv) {
     }
     if (token.startsWith("--")) {
       const key = token.slice(2);
-      if (["execute", "dry-run", "live-console"].includes(key)) {
+      if (["execute", "dry-run", "live-console", "no-live-console", "silent"].includes(key)) {
         parsed[toCamel(key)] = true;
         continue;
       }
@@ -429,17 +429,22 @@ async function run(args) {
   const packet = requireAssignmentPacket(args, commandContext);
   assertValidIntakeForPacket(commandContext, packet, args.command || "run");
 
+  const liveConsoleDisabled = Boolean(args.noLiveConsole || args.silent);
   if (args.liveConsole && args.liveConsoleUrl) {
     throw new CliError("--live-console and --live-console-url are mutually exclusive", 1);
   }
-  if (args.liveConsolePort !== undefined && !args.liveConsole) {
-    throw new CliError("--live-console-port requires --live-console", 1);
+  if (liveConsoleDisabled && (args.liveConsole || args.liveConsoleUrl || args.liveConsolePort !== undefined)) {
+    throw new CliError("--no-live-console/--silent cannot be combined with Live Console options", 1);
+  }
+  if (args.liveConsolePort !== undefined && args.liveConsoleUrl) {
+    throw new CliError("--live-console-port and --live-console-url are mutually exclusive", 1);
   }
 
   if (args.runner) {
     const runnerOptions = prepareRunnerExecution(commandContext, packet, args);
+    const useOwnedLiveConsole = !liveConsoleDisabled && !args.liveConsoleUrl;
     let ownedLiveConsole = null;
-    if (args.liveConsole) {
+    if (useOwnedLiveConsole) {
       const port = parsePort(args.liveConsolePort ?? "0", "--live-console-port");
       ownedLiveConsole = await startLiveConsole({ port });
       runnerOptions.liveConsoleUrl = ownedLiveConsole.eventsUrl;
@@ -487,8 +492,8 @@ async function run(args) {
     }
   }
 
-  if (args.liveConsole || args.liveConsoleUrl) {
-    throw new CliError(`${args.liveConsole ? "--live-console" : "--live-console-url"} requires --runner <id>`, 1);
+  if (args.liveConsole || args.liveConsoleUrl || args.liveConsolePort !== undefined || liveConsoleDisabled) {
+    throw new CliError("Live Console selection flags require --runner <id>", 1);
   }
 
   appendRunnerEntry(commandContext, "Issued Assignments", renderAssignmentPacket(packet));
@@ -4016,7 +4021,7 @@ Usage:
   node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
   node bin/cli-agent-runner.mjs collect [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] --status <status> --lifecycle-disposition state_retired|continuation_expected [--cancel-reason <allowed-reason>] [--findings <text>] [--changed-files <text>] [--verification <text>] [--blockers <text>] [--assumptions <text>] [--next <text>] [--finalization-references <typed-refs>] [--expected-outcome <text>] [--actual-result <text>] [--reproduction-or-evidence <text>] [--failure-point <text>] [--hypothesis-branches <text>] [--source-of-truth-boundary <text>] [--plugin-contract-boundary <text>] [--generated-artifact-boundary <text>] [--before-context-effects <text>] [--after-context-effects <text>] [--cross-feature-consequences <text>] [--root-cause <text>] [--fix-summary <text>] [--verification-evidence <text>] [--skipped-checks <text>] [--unresolved-risks <text>] [--next-investigation <text>]
   node bin/cli-agent-runner.mjs finalize [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--contract-coverage required] --decision-coverage <text> --completion-coverage <text> --source-spec-coverage <text>
-  node bin/cli-agent-runner.mjs run|orchestrate [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [--live-console [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url>]
+  node bin/cli-agent-runner.mjs run|orchestrate [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs live-console [--port <0-65535>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
   node bin/cli-agent-runner.mjs normalize-debugging-integrity [--cwd <path>] [--target-cwd <path>] [--execute]
@@ -4030,7 +4035,7 @@ Commands:
   collect  Record a worker-result-collection packet and its workflow-state-only lifecycle disposition. Completed collection does not require task-wide D/C/source-spec coverage. state_retired requires exactly one allowed --cancel-reason; continuation_expected rejects --cancel-reason.
   finalize Validate complete active D/C/source-spec coverage and record a distinct task-finalization packet. Every ID segment and source_spec_coverage requires one accepted typed reference.
   run/orchestrate
-           Record an assignment and orchestration skeleton by default; with --runner <id>, resolve the configured CLI profile, stream it asynchronously, and record normalized results. Pass --live-console for the automatic owned server path, or --live-console-url <tokenized-loopback-url> for an advanced external console.
+           Record an assignment and orchestration skeleton without --runner. With --runner <id>, start and retain an owned Live Console by default, resolve the configured CLI profile, stream it asynchronously, and record normalized results. --live-console remains an optional explicit spelling, --live-console-url reuses a prestarted console, and only --no-live-console or --silent disables the console.
   live-console
            Start the built-in token-protected loopback viewer server for Codex IAB and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments

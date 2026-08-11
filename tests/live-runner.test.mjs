@@ -116,7 +116,7 @@ test("CLI streams a Grok-shaped messages fixture into the built-in Live Console 
   }
 });
 
-test("run --live-console owns startup, URL injection, completed-state retention, and signal cleanup", async () => {
+test("run owns Live Console by default and only explicit OFF flags disable it", async () => {
   const repo = makeTempGitRepo();
   const configPath = path.join(repo, "runners.json");
   let execution;
@@ -158,7 +158,25 @@ test("run --live-console owns startup, URL injection, completed-state retention,
     assert.equal(ownershipConflict.status, 1);
     assert.match(ownershipConflict.stderr, /mutually exclusive/);
 
-    execution = spawnCli([...commonArgs, "--live-console", "--live-console-port", "0"]);
+    const explicitOffConflict = spawnSync(process.execPath, [
+      CLI,
+      ...commonArgs,
+      "--no-live-console",
+      "--live-console",
+    ], { encoding: "utf8" });
+    assert.equal(explicitOffConflict.status, 1);
+    assert.match(explicitOffConflict.stderr, /cannot be combined/);
+
+    const silentExternalConflict = spawnSync(process.execPath, [
+      CLI,
+      ...commonArgs,
+      "--silent",
+      "--live-console-url", "http://127.0.0.1:1/?token=test",
+    ], { encoding: "utf8" });
+    assert.equal(silentExternalConflict.status, 1);
+    assert.match(silentExternalConflict.stderr, /cannot be combined/);
+
+    execution = spawnCli(commonArgs);
     await waitFor(() => /live_console_viewer_url: \S+/.test(execution.stdout()));
     const viewerUrl = /live_console_viewer_url: (\S+)/.exec(execution.stdout())[1];
 
@@ -183,6 +201,13 @@ test("run --live-console owns startup, URL injection, completed-state retention,
     assert.match(completed.stdout, /live_console_stop_signal: SIGINT/);
     await assert.rejects(fetchLiveSnapshot(viewerUrl));
     assert.match(readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8"), /summary: visible progress/);
+
+    for (const offFlag of ["--no-live-console", "--silent"]) {
+      const disabled = spawnSync(process.execPath, [CLI, ...commonArgs, offFlag], { encoding: "utf8" });
+      assert.equal(disabled.status, 0, disabled.stderr);
+      assert.match(disabled.stdout, /live_console_status: disabled/);
+      assert.doesNotMatch(disabled.stdout, /live_console_viewer_url:/);
+    }
   } finally {
     if (execution?.child.exitCode === null) execution.child.kill("SIGINT");
     rmSync(repo, { recursive: true, force: true });

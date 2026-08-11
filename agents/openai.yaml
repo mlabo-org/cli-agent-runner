@@ -1,3 +1,3 @@
 display_name: CLI Agent Runner
-short_description: Run scoped CLI workers with an IAB Live Console.
-default_prompt: Use CLI Agent Runner to automatically start and open its Codex IAB Live Console, launch a scoped Grok or custom CLI worker, stream activity, and record process, artifact-acceptance, and result-contract state.
+short_description: Run scoped CLI workers with a default-on IAB Live Console.
+default_prompt: Use CLI Agent Runner to open its IAB Live Console before project work, keep it ready, then launch a scoped Grok or CLI worker and record execution, artifact-acceptance, and result-contract state. Disable it only on explicit request.

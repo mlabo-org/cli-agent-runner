@@ -4,9 +4,9 @@ CLI Agent Runner launches scoped Codex, Claude, Grok, or JSON-configured command
 
 ## Live Console
 
-The built-in Live Console shows worker activity while the child process is still running. It is a loopback-only web viewer intended for the Codex in-app browser (IAB); AgentScope or a separate viewer application is not required. With the plugin skill, server startup, URL handoff, IAB opening, runner launch, and cleanup are one automatic flow.
+The built-in Live Console shows worker activity while the child process is still running. It is a loopback-only web viewer intended for the Codex in-app browser (IAB); AgentScope or a separate viewer application is not required. Live Console is default-on. The plugin skill starts and opens one standby console before target intake or worker preparation, then reuses it for later runs. Direct CLI runner use owns a console automatically when no prestarted URL or explicit OFF flag is supplied.
 
-Add `--live-console` to the normal scoped runner command:
+No Live Console flag is required for a direct scoped runner command:
 
 ```sh
 node bin/cli-agent-runner.mjs run \
@@ -17,13 +17,14 @@ node bin/cli-agent-runner.mjs run \
   --scope "scope:v1 paths=src/,tests/" \
   --assignment "Implement the scoped change" \
   --expected-output "Changed files and verification" \
-  --runner grok-cli \
-  --live-console
+  --runner grok-cli
 ```
 
-The command starts its own server, prints a tokenized viewer URL, injects the ingest URL, runs the worker, and retains the completed page until Ctrl-C. When this plugin skill owns the run, it opens the printed URL in Codex IAB and stops the owned terminal session automatically after final inspection. The token grants access to local telemetry, so do not paste the URL into logs, commits, or remote messages.
+The command starts its own server, prints a tokenized viewer URL, injects the ingest URL, runs the worker, and retains the completed page until Ctrl-C. `--live-console` remains accepted as an optional explicit spelling, and `--live-console-port` can select a port. The token grants access to local telemetry, so do not paste the URL into logs, commits, or remote messages.
 
-For an advanced shared or externally managed console, start `live-console --port 0` separately and pass its printed URL through `--live-console-url <url>`. Do not combine the owned and external modes.
+When the plugin skill owns the workflow, it starts `live-console --port 0` first, opens the URL in Codex IAB, and later passes that same console through `--live-console-url <url>` to every runner. This keeps the viewer ready long before Grok or another worker starts and avoids spawning a second console.
+
+Console-free operation is explicit-only. Use `--no-live-console` or its `--silent` alias only after the user has asked for silent mode, no console, or Live Console OFF. These flags cannot be combined with positive Live Console options.
 
 The bundled Grok profile uses its Anthropic Messages-compatible streaming JSON output. Other profiles still use the same provider-neutral runner path and publish whatever stdout/stderr their CLI emits. The existing process result, timeout, result-contract, and repository scope-guard decisions remain authoritative.
 

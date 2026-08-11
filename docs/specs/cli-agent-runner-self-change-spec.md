@@ -235,17 +235,33 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      authenticated ingest, snapshot and SSE delivery, static viewer assets, and
      bounded ephemeral run history. It must not depend on AgentScope or private
      Codex GUI IPC.
-   - `run --runner <id> --live-console` is the normal owned observation path.
-     It starts the secure server, injects its ingest URL, emits stable viewer and
-     completion markers, retains the final view, and closes the server after
-     SIGINT or SIGTERM. The parent plugin skill owns persistent-terminal launch,
-     supported IAB opening, completion observation, and controller cleanup.
+   - Live Console is default-on. At skill selection, before target intake,
+     assignment construction, or worker launch, the parent plugin skill starts
+     one standalone `live-console --port 0` session, opens its tokenized viewer
+     URL in supported Codex IAB, and keeps the server ready for later runners.
+   - The normal plugin-owned runner path uses
+     `run --runner <id> --live-console-url <url>` to reuse that already visible
+     console. The parent owns persistent-terminal launch, supported IAB opening,
+     final observation, and cleanup when the task ends or the user stops it.
+   - Direct `run|orchestrate --runner <id>` owns a Live Console by default when
+     no prestarted URL or explicit OFF selector is supplied. It starts the secure
+     server before assignment append or worker launch, injects its ingest URL,
+     emits stable viewer and completion markers, retains the final view, and
+     closes the server after SIGINT or SIGTERM. `--live-console` remains accepted
+     as an optional explicit compatibility spelling.
+   - `--no-live-console` and `--silent` are the only CLI OFF selectors. They are
+     mutually exclusive with `--live-console`, `--live-console-port`, and
+     `--live-console-url`. Absence of a console request never selects OFF.
+   - Failure to start or open the default console blocks target intake and worker
+     launch. It must remain visible as a console failure and must not be treated
+     as an implicit OFF request or hidden fallback.
    - `run --runner <id> --live-console-url <url>` publishes a versioned,
      provider-neutral envelope with `version`, `runId`, `sequence`, `timestamp`,
      `type`, `stream`, `text`, and `data`. The parent Codex session owns opening
      the printed localhost URL in IAB.
-     This remains an advanced external-console path and is mutually exclusive
-     with `--live-console`; the CLI must not use private Codex GUI IPC.
+     This is the default plugin standby-console handoff and remains available for
+     manually managed consoles; it is mutually exclusive with explicit owned or
+     OFF selectors. The CLI must not use private Codex GUI IPC.
    - Live Console transport is observation, not workflow state or artifact
      acceptance. `.cli-agent-runner/runner.md` remains the durable result record;
      a transport failure is reported separately from child execution status.
