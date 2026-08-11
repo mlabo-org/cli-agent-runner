@@ -1314,13 +1314,18 @@ function makeTempGitRepo() {
 }
 
 function runCli(args, options = {}) {
-  const commandArgs = withCollectLifecycle(args);
+  const commandArgs = withExplicitConsoleOff(withCollectLifecycle(args));
   return spawnSync(process.execPath, [CLI, ...commandArgs], {
     cwd: options.cwd || REPO_ROOT,
     env: options.env || process.env,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
   });
+}
+
+function withExplicitConsoleOff(args) {
+  if (!["run", "orchestrate"].includes(args[0]) || !args.includes("--runner")) return args;
+  return [...args, "--no-live-console"];
 }
 
 function withCollectLifecycle(args) {

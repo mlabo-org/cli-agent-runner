@@ -57,7 +57,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "Codex, Claude, And Grok CLI Worker Launch",
     "User-Configured CLI Runner Registry",
     "stdout/stderr And Final-Message Capture",
-    "Automatically Owned Token-Protected IAB Live Console",
+      "Default-On Prestarted Token-Protected IAB Live Console",
     "Provider-Neutral Text And JSON Event Streaming",
     "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
     "Machine-Checkable Scope Guard",
@@ -65,7 +65,9 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
   assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
   assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
-  assert.match(manifest.interface.longDescription, /automatically owns server startup and URL handoff/i);
+  assert.match(manifest.interface.longDescription, /starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation/i);
+  assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
+  assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
   assert.match(manifest.interface.longDescription, /streams emitted stdout\/stderr or structured messages/i);
   assert.match(manifest.interface.longDescription, /records execution, parent artifact-acceptance, and result-contract outcomes independently/i);
   assert.ok(
@@ -76,10 +78,11 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   );
 
   assert.ok(frontmatterDescription.length <= 320, "skill description must stay routing-budget concise");
-  assert.match(frontmatterDescription.slice(0, 160), /^Run scoped Grok, Claude, Codex, or custom CLI workers/i);
-  assert.match(frontmatterDescription.slice(0, 160), /Codex IAB Live Console/i);
-  assert.match(frontmatterDescription, /Trigger on cli-agent-runner, Live Console, Grok\/Claude CLI, custom runner JSON/i);
-  assert.match(frontmatterDescription, /excludes ordinary official subagents/i);
+  assert.match(frontmatterDescription.slice(0, 160), /^Run Grok, Claude, Codex, or custom CLI workers/i);
+  assert.match(frontmatterDescription.slice(0, 160), /default-on IAB Live Console/i);
+  assert.match(frontmatterDescription, /Triggers: CLI Agent Runner, Live Console, Grok\/Claude CLI, runner JSON/i);
+  assert.match(frontmatterDescription, /Only explicit silent\/no-console requests disable it/i);
+  assert.match(frontmatterDescription, /excludes official subagents/i);
 
   const triggerBoundary = skill.match(/## Trigger Boundary\n\n([\s\S]*?)\n## Core Contract/);
   assert.ok(triggerBoundary, "SKILL.md must define Trigger Boundary before Core Contract");
@@ -88,6 +91,11 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(triggerBoundary[1], /primary execution route is `run` or `orchestrate` with `--runner <id>`/i);
   assert.match(triggerBoundary[1], /Bundled IDs are `codex-cli`, `claude-cli`, and `grok-cli`/i);
   assert.match(triggerBoundary[1], /Do not auto-route this skill for generic coding, ordinary official-subagent work/i);
+  assert.match(skill, /first action after trigger is to launch `live-console --port 0`/i);
+  assert.match(skill, /before target resolution, project intake, assignment construction/i);
+  assert.match(skill, /Only a current explicit silent\/no-console\/OFF instruction selects console-free execution/i);
+  assert.match(skill, /Direct CLI `run\|orchestrate --runner <id>` without a URL starts an owned console by default/i);
+  assert.match(skill, /If the default console cannot start or its viewer cannot be opened, stop before target intake or worker launch/i);
 
   assert.equal(defaultRunners.version, 1);
   assert.deepEqual(Object.keys(defaultRunners.runners).sort(), ["claude-cli", "codex-cli", "grok-cli"]);
@@ -100,8 +108,9 @@ test("agents metadata advertises the multi-CLI Live Console route", () => {
 
   assert.match(shortDescription, /IAB Live Console/i);
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
-  assert.match(defaultPrompt, /automatically start and open its Codex IAB Live Console/i);
-  assert.match(defaultPrompt, /launch a scoped Grok or custom CLI worker/i);
-  assert.match(defaultPrompt, /stream activity/i);
-  assert.match(defaultPrompt, /record process, artifact-acceptance, and result-contract state/i);
+  assert.match(defaultPrompt, /open its IAB Live Console before project work/i);
+  assert.match(defaultPrompt, /keep it ready/i);
+  assert.match(defaultPrompt, /launch a scoped Grok or CLI worker/i);
+  assert.match(defaultPrompt, /record execution, artifact-acceptance, and result-contract state/i);
+  assert.match(defaultPrompt, /Disable it only on explicit request/i);
 });

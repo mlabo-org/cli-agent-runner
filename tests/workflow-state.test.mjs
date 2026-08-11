@@ -2442,12 +2442,18 @@ function pathWithFakeCodex(fakeBin) {
 }
 
 function runCli(args, options = {}) {
-  return spawnSync(process.execPath, [CLI, ...args], {
+  const commandArgs = withExplicitConsoleOff(args);
+  return spawnSync(process.execPath, [CLI, ...commandArgs], {
     cwd: options.cwd || REPO_ROOT,
     env: options.env || process.env,
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
   });
+}
+
+function withExplicitConsoleOff(args) {
+  if (!["run", "orchestrate"].includes(args[0]) || !args.includes("--runner")) return args;
+  return [...args, "--no-live-console"];
 }
 
 function readState(repo, file) {

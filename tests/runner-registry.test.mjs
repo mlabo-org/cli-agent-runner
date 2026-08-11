@@ -290,6 +290,7 @@ function runWorker(repo, taskId, runnerId, environment) {
     "process runner result",
     "--runner",
     runnerId,
+    "--no-live-console",
   ], { env: environment });
 }
 
