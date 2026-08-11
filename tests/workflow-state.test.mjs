@@ -1968,7 +1968,6 @@ test("orchestrate launches independent jobs in parallel and records every result
       },
     ]);
 
-    const startedAt = Date.now();
     const run = runCli([
       "orchestrate",
       "--target-cwd", repo,
@@ -1980,10 +1979,15 @@ test("orchestrate launches independent jobs in parallel and records every result
       "--runner-config", configPath,
       "--jobs-file", jobsPath,
     ]);
-    const elapsedMs = Date.now() - startedAt;
-
     assert.equal(run.status, 0, run.stderr);
-    assert.ok(elapsedMs < 900, `expected two 500ms jobs to overlap; elapsed ${elapsedMs}ms`);
+    const alphaStarted = Number(readFileSync(path.join(repo, "alpha", "started-at-ms.txt"), "utf8"));
+    const alphaCompleted = Number(readFileSync(path.join(repo, "alpha", "completed-at-ms.txt"), "utf8"));
+    const betaStarted = Number(readFileSync(path.join(repo, "beta", "started-at-ms.txt"), "utf8"));
+    const betaCompleted = Number(readFileSync(path.join(repo, "beta", "completed-at-ms.txt"), "utf8"));
+    assert.ok(
+      alphaStarted < betaCompleted && betaStarted < alphaCompleted,
+      `expected job intervals to overlap; alpha=${alphaStarted}-${alphaCompleted} beta=${betaStarted}-${betaCompleted}`
+    );
     assert.equal(readFileSync(path.join(repo, "alpha", "result.txt"), "utf8"), "alpha-job\n");
     assert.equal(readFileSync(path.join(repo, "beta", "result.txt"), "utf8"), "beta-job\n");
     const runner = readState(repo, "runner.md");
@@ -2542,9 +2546,13 @@ const prompt = process.argv[1] || "";
 const jobId = /^job_id: (.+)$/m.exec(prompt)?.[1] || "single-run";
 const ownerScope = /^owner_scope: (.+)$/m.exec(prompt)?.[1] || "";
 const ownerPath = ownerScope.replace(/^scope:v1 paths=/, "").replace(/\\\/$/, "");
+if (ownerPath) {
+  mkdirSync(ownerPath, { recursive: true });
+  writeFileSync(ownerPath + "/started-at-ms.txt", String(Date.now()), "utf8");
+}
 setTimeout(() => {
   if (ownerPath) {
-    mkdirSync(ownerPath, { recursive: true });
+    writeFileSync(ownerPath + "/completed-at-ms.txt", String(Date.now()), "utf8");
     writeFileSync(ownerPath + "/result.txt", jobId + "\\n", "utf8");
   }
   process.stdout.write(jobId + " completed\\n");

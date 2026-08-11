@@ -2,6 +2,9 @@
   "name": "cli-agent-runner",
   "version": "0.4.0",
   "description": "Run scoped Grok, Claude, Codex, or custom CLI workers with CLI Agent Runner: one worker, runner-brokered local descendants, or parent-declared independent leaf jobs, sharing its default-on Codex IAB Live Console. Trigger on CLI Agent Runner, local orchestrator, Live Console, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; explicit silent/no-console requests are the only OFF path; excludes generic coding and ordinary official subagents.",
+  "homepage": "https://github.com/mlabo-org/cli-agent-runner#readme",
+  "repository": "https://github.com/mlabo-org/cli-agent-runner",
+  "license": "MIT",
   "skills": "./skills/",
   "keywords": [
     "cli-agent-runner",
@@ -51,6 +54,7 @@
     "brandColor": "#2563EB"
   },
   "author": {
-    "name": "Local developer"
+    "name": "Makoto Suzuki",
+    "url": "https://github.com/mlabo-org"
   }
 }

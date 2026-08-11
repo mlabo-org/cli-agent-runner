@@ -1,35 +1,136 @@
 # CLI Agent Runner
 
-CLI Agent Runner launches scoped Codex, Claude, Grok, or JSON-configured command-line workers. `run` launches exactly one parent-managed worker; local-orchestrator mode may let that worker broker bounded internal descendants. `orchestrate` launches the parent-declared independent responsibility leaves in one jobs file concurrently. A successful in-scope run or orchestration records its minimal completed result and stops; failure and scope violations remain explicit.
+[English](#english) · [日本語](#日本語)
 
-## Execution Modes
+Run Codex, Claude, Grok, or a custom CLI as a scoped worker—with a default-on Live Console and an optional runner-owned delegation layer.
 
-Use `run --runner <id>` when one owner can complete the scoped work without a useful split. It accepts one role, owner scope, assignment, and expected output, then launches one worker.
+Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し、既定ONのLive Consoleと、必要時だけ使うrunner所有のローカル再委託を提供するCodexプラグインです。
 
-Use `orchestrate --runner <id> --jobs-file <json>` only after the parent has modelled the human responsibility owners and their dependency graph. The command keeps task identity at the top level; its version-1 JSON file supplies the independently executable leaves:
+![CLI Agent Runner Live Console showing a brokered Grok run](docs/assets/live-console-brokered-delegation.png)
 
-```json
-{
-  "version": 1,
-  "jobs": [
-    {
-      "id": "docs",
-      "role": "Documentation owner",
-      "ownerScope": "README.md",
-      "assignment": "Update the public contract.",
-      "expectedOutput": "Changed documentation."
-    }
-  ]
-}
+<p align="center">
+  <img src="docs/assets/generated-neon-bastion.png" width="49%" alt="A neon Space Invaders game produced by a CLI worker">
+  <img src="docs/assets/generated-space-invaders.png" width="49%" alt="A second Space Invaders result produced by a CLI worker">
+</p>
+
+<p align="center"><em>One delegated implementation, visible while it runs, followed by the actual browser-game results. / 委託実装を実行中から可視化し、そのまま得られたブラウザゲームの成果例。</em></p>
+
+## Install with Codex / Codexでインストール
+
+This repository is agent-first installable. Give its URL to Codex and paste this request:
+
+> Install CLI Agent Runner from https://github.com/mlabo-org/cli-agent-runner into my local Codex environment. Read the repository-root AGENTS.md first and follow its installation route. Resolve my own home directory, preserve existing marketplace entries, never edit the installed cache directly, and report the installed version plus the required restart and fresh-task verification. Do not require Claude or Grok unless I ask to use those profiles.
+
+このリポジトリは、取得した側のCodexが初見で導入できる構成です。CodexにURLと次の依頼を渡してください。
+
+> https://github.com/mlabo-org/cli-agent-runner から CLI Agent Runner を私のローカルCodex環境へインストールして。最初にリポジトリ直下の AGENTS.md を読み、そこに定義された導入経路に従って。私自身のホームディレクトリを解決し、既存marketplaceエントリを保全し、インストール済みcacheは直接編集せず、導入されたversionと再起動・新規taskでの確認手順まで報告して。ClaudeまたはGrokのprofileを使うよう頼むまでは、それらを導入条件にしないで。
+
+The root `AGENTS.md` activates only for an explicit installation request. The complete mutation and stop-condition contract is in [`docs/INSTALL_FOR_CODEX.md`](docs/INSTALL_FOR_CODEX.md); normal repository work never triggers installation.
+
+## English
+
+### What it does
+
+CLI Agent Runner gives a parent Codex task one provider-neutral process boundary for CLI workers:
+
+- `codex-cli`, `claude-cli`, and `grok-cli` are bundled profiles.
+- JSON configuration can add or override profiles without provider-specific execution code.
+- Every worker receives a target repository, role, task identity, machine-checkable write scope, assignment, and expected output.
+- stdout, stderr, structured provider events, normalized results, and brokered child lineage can be observed in the loopback-only Live Console.
+- Repository scope is checked after execution. Out-of-scope changes remain an explicit failure.
+
+The plugin does not replace official Codex subagents. Use it when the user explicitly wants a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
+
+### Responsibility model
+
+The root parent still owns the user goal, top-level decomposition, authority, concurrency, integration, and final acceptance. Deeper delegation exists for a narrower case: one assigned worker owns a coherent responsibility but can save time by splitting bounded internal helper work that it will integrate itself.
+
+```mermaid
+flowchart LR
+  U["User goal"] --> P["Root parent"]
+  P -->|"independent top-level leaves"| O["orchestrate"]
+  P -->|"one coherent responsibility"| R["run"]
+  R -->|"optional bounded helper split"| B["runner-owned broker"]
+  B --> C1["child helper A"]
+  B --> C2["child helper B"]
+  C1 --> R
+  C2 --> R
+  O --> L["parent integration"]
+  R --> L
+  O -. telemetry .-> V["Live Console"]
+  R -. telemetry .-> V
+  B -. lineage .-> V
 ```
 
-Choose orchestration when independent workstreams materially reduce total elapsed time. Each job must have a stable handoff and a non-overlapping writable scope. Keep tightly coupled work with one owner, and use one worker when split and merge overhead erases the time saving. A hierarchy permission ceiling only controls a worker's descendants; it never creates or substitutes for the parent's explicit sibling-job dispatch. After a successful orchestration, do not launch a reviewer, validator, or other post-success gate.
+This keeps the layers distinct:
 
-## Local Delegation
+- The parent uses `orchestrate` only for independently owned, non-overlapping top-level work.
+- A worker uses `local_orchestrator` only inside its inherited authority and returns one integrated result.
+- A hierarchy depth is a permission ceiling, not a demand to create more agents.
+- Provider-private descendants that bypass the broker cannot appear as tracked Live Console lineage.
 
-Assignments have one resolved delegation mode. `leaf` exposes no descendant mechanism. `local_orchestrator` starts a token-protected loopback broker owned by the current runner process. The worker may ask that broker to launch bounded internal helpers, then integrates their results into its own complete output. Each helper inherits task lineage, runner profile, authority scope, supervision, Live Console transport, and a decremented hierarchy depth. Sibling helpers require unique IDs and non-overlapping `focus_scope` values inside that authority; the broker confines their concurrent execution to the collective declared focus set without creating new parent-owned sibling jobs.
+### Execution modes
 
-The route is provider-neutral. Codex, Claude, Grok, and custom runner profiles receive the same broker command in their assignment prompt. When a profile has no hierarchy default, explicit local-orchestrator selection supplies one direct-child level:
+| Mode | Use when | Who integrates |
+|---|---|---|
+| `run` | One worker can own the complete scoped assignment | Root parent |
+| `run --delegation-mode local_orchestrator` | That one worker has a useful bounded internal split | The assigned worker, then the root parent |
+| `orchestrate --jobs-file ...` | The parent has independent, non-overlapping responsibility leaves | Root parent |
+
+After a successful in-scope process result, the runner stops. It does not automatically add a reviewer, validator, collection, or finalization chain.
+
+### Requirements
+
+- macOS with Codex desktop and a Codex CLI that exposes plugin commands.
+- Git.
+- Node.js 22 or later. The runtime uses Node standard libraries and has no package dependencies.
+- An authenticated CLI for each selected runner profile:
+
+| Profile | Command | Required only when selected |
+|---|---|---|
+| `codex-cli` | `codex` | Yes; also used for plugin installation |
+| `claude-cli` | `claude` | Yes |
+| `grok-cli` | `grok` | Yes |
+
+Installing the plugin does not install or authenticate provider CLIs.
+
+### Manual installation
+
+The agent-first route above is preferred. For a manual install, use the canonical personal-plugin path. If the destination already exists, inspect it first and do not overwrite unrelated work.
+
+```sh
+git clone https://github.com/mlabo-org/cli-agent-runner.git "$HOME/plugins/cli-agent-runner"
+cd "$HOME/plugins/cli-agent-runner"
+npm run check
+npm run plugin:install:check
+npm run plugin:install
+```
+
+`plugin:install:check` is read-only. `plugin:install` preserves unrelated entries in `~/.agents/plugins/marketplace.json`, installs through `codex plugin add`, and verifies the installed manifest version. Restart Codex afterward and open a fresh task.
+
+Fresh-task verification prompt:
+
+> Explain CLI Agent Runner's trigger boundary, bundled runners, and default Live Console behavior. Do not start a CLI worker yet.
+
+### Run one worker
+
+From the repository root:
+
+```sh
+node bin/cli-agent-runner.mjs run \
+  --target-cwd /path/to/jobsite \
+  --role Implementer \
+  --task-id focused-change \
+  --epoch e1 \
+  --scope "scope:v1 paths=src/,tests/" \
+  --assignment "Implement the scoped change" \
+  --expected-output "Changed files and verification" \
+  --runner codex-cli
+```
+
+Direct `run` and `orchestrate` commands start a token-protected loopback Live Console by default and keep the completed page available until Ctrl-C. Use `--no-live-console` or `--silent` only when console-free operation is explicitly intended.
+
+### Let one worker delegate internally
 
 ```sh
 node bin/cli-agent-runner.mjs run \
@@ -41,37 +142,246 @@ node bin/cli-agent-runner.mjs run \
   --delegation-mode local_orchestrator \
   --assignment "Own this coherent implementation and delegate only bounded internal helpers" \
   --expected-output "One integrated implementation result" \
-  --runner codex-cli
+  --runner claude-cli
 ```
 
-The worker-only `delegate` command cannot be used from an ordinary parent shell. It requires the broker environment injected into a running local orchestrator and cannot select another target, task identity, runner, authority scope, or hierarchy ceiling. Brokered child runs appear separately in Live Console with `parentRunId`, depth, and `delegation.started` / `delegation.completed` lifecycle messages. Provider-private descendants that bypass the broker are not represented as tracked lineage.
+Explicit local-orchestrator mode supplies one direct-child level when the selected profile has no hierarchy default. The worker-only `delegate` command is injected into that worker. Calling `delegate` from an ordinary parent shell fails closed.
 
-## Live Console
+### Run independent parent-declared jobs
 
-The built-in Live Console shows worker activity while the child process is still running. It is a loopback-only web viewer intended for the Codex in-app browser (IAB); AgentScope or a separate viewer application is not required. Live Console is default-on. The plugin skill starts and opens one standby console before target intake or worker preparation, then reuses it for later runs. Direct CLI runner use owns a console automatically when no prestarted URL or explicit OFF flag is supplied.
+Create a version-1 jobs file:
 
-No Live Console flag is required for a direct scoped runner command:
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "docs",
+      "role": "Docs Keeper",
+      "ownerScope": "README.md",
+      "assignment": "Update the public contract.",
+      "expectedOutput": "Updated README."
+    },
+    {
+      "id": "tests",
+      "role": "Test Runner",
+      "ownerScope": "tests/",
+      "assignment": "Add the scoped behavior tests.",
+      "expectedOutput": "Changed tests and results."
+    }
+  ]
+}
+```
+
+Then run:
+
+```sh
+node bin/cli-agent-runner.mjs orchestrate \
+  --target-cwd /path/to/jobsite \
+  --task-id public-contract \
+  --epoch e1 \
+  --scope "scope:v1 paths=README.md,tests/" \
+  --runner grok-cli \
+  --jobs-file /path/to/jobs.json
+```
+
+Every `ownerScope` must be inside the top-level scope and pairwise non-overlapping with concurrent jobs.
+
+### Custom runners and state
+
+Runner configuration precedence is bundled defaults, user config, jobsite `.cli-agent-runner/runners.json`, `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`. See [`docs/runner-configuration.md`](docs/runner-configuration.md) for the schema and examples.
+
+Workflow state lives in the target Git repository's `.cli-agent-runner/` directory. The tool adds that directory to the target repository's local `.git/info/exclude`; it does not silently change the tracked `.gitignore`.
+
+See [`docs/live-console.md`](docs/live-console.md) for the event, token, IAB handoff, and parent-child lineage contract.
+
+### Security boundaries
+
+- Live Console binds to loopback and requires its generated token. Treat the full tokenized URL as sensitive local telemetry; do not paste it into commits, logs, issues, or remote messages.
+- Runner profiles execute local commands with their configured arguments and permissions. Review third-party runner JSON before use.
+- Machine scopes restrict repository paths; they do not replace the selected provider's own permission model.
+- Plugin source is authoritative. Never patch `~/.codex/plugins/cache/` directly.
+
+For vulnerability reports, see [`SECURITY.md`](SECURITY.md).
+
+### Development
+
+```sh
+npm run check
+npm run test:cli
+npm run test:live
+```
+
+The complete test suite is the release check. See [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening a pull request.
+
+## 日本語
+
+### このプラグインが行うこと
+
+CLI Agent Runnerは、親Codex taskからCLI workerを起動するためのprovider非依存な実行境界を提供します。
+
+- `codex-cli`、`claude-cli`、`grok-cli`を標準profileとして同梱します。
+- JSON設定により、provider固有の実行分岐を追加せずprofileを追加・上書きできます。
+- 各workerへ対象repository、role、task identity、機械判定可能なwrite scope、assignment、expected outputを渡します。
+- stdout、stderr、providerのstructured event、正規化結果、broker経由のchild lineageをloopback専用Live Consoleで観測できます。
+- 実行後にrepository scopeを検査し、範囲外変更は明示的な失敗として残します。
+
+このプラグインはCodex公式subagentの代替ではありません。ユーザーがローカルCLI LLM、そのstreaming output、custom runner profile、またはLive Consoleを明示的に求めた場合に使います。
+
+### 責務モデル
+
+root parentは、ユーザー目標、最上位のtask分割、権限、並列数、統合、最終acceptanceを引き続き所有します。さらに一段深い委託が必要になるのは限定的です。すなわち、一つのcoherentな責務を任されたworkerが、自分で統合できるboundedな内部helperへ分けることで時間を短縮できる場合です。
+
+- 親は、独立所有でき、scopeが重ならない最上位workだけを`orchestrate`へ渡します。
+- workerは、継承した権限内の内部再分割だけを`local_orchestrator`で行い、一つの統合済み結果を返します。
+- hierarchy depthは許可上限であり、agentを増やす命令ではありません。
+- brokerを迂回したprovider独自descendantは、Live Consoleの追跡lineageには現れません。
+
+### 実行モード
+
+| Mode | 選ぶ条件 | 統合責任 |
+|---|---|---|
+| `run` | 一つのworkerがscope内のassignmentを完結できる | root parent |
+| `run --delegation-mode local_orchestrator` | そのworker内部に有効なbounded splitがある | assigned worker、その後root parent |
+| `orchestrate --jobs-file ...` | 親が独立・非重複の責務leafを確定済み | root parent |
+
+scope内でprocess resultが成功した時点でrunnerは終了します。reviewer、validator、collection、finalizationのchainを自動追加しません。
+
+### 必要環境
+
+- Codex desktopとplugin commandを備えたCodex CLIが動くmacOS。
+- Git。
+- Node.js 22以降。runtimeはNode標準libraryのみを使い、package dependencyはありません。
+- 実際に選ぶrunner profileに対応した認証済みCLI。
+
+| Profile | Command | 必要になる時点 |
+|---|---|---|
+| `codex-cli` | `codex` | 選択時。plugin導入にも使用 |
+| `claude-cli` | `claude` | 選択時のみ |
+| `grok-cli` | `grok` | 選択時のみ |
+
+pluginの導入はprovider CLIのインストールや認証を行いません。
+
+### 手動インストール
+
+通常は冒頭のagent-first導入を使ってください。手動の場合もpersonal pluginのcanonical pathへ置きます。既にdestinationがある場合は先に内容を確認し、無関係な変更を上書きしないでください。
+
+```sh
+git clone https://github.com/mlabo-org/cli-agent-runner.git "$HOME/plugins/cli-agent-runner"
+cd "$HOME/plugins/cli-agent-runner"
+npm run check
+npm run plugin:install:check
+npm run plugin:install
+```
+
+`plugin:install:check`はread-onlyです。`plugin:install`は`~/.agents/plugins/marketplace.json`の無関係なentryを保全し、`codex plugin add`で導入し、manifest versionまで確認します。完了後にCodexを再起動し、新しいtaskを開いてください。
+
+新規taskでの確認prompt:
+
+> CLI Agent Runner の利用条件、標準 runner、Live Console の既定動作を説明して。CLI worker はまだ起動しないで。
+
+### 一つのworkerを起動する
+
+repository rootから実行します。
 
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
   --role Implementer \
-  --task-id my-task \
+  --task-id focused-change \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \
   --assignment "Implement the scoped change" \
   --expected-output "Changed files and verification" \
-  --runner grok-cli
+  --runner codex-cli
 ```
 
-The command starts its own server, prints a tokenized viewer URL, injects the ingest URL, runs the worker, and retains the completed page until Ctrl-C. `--live-console` remains accepted as an optional explicit spelling, and `--live-console-port` can select a port. The token grants access to local telemetry, so do not paste the URL into logs, commits, or remote messages.
+直接実行した`run`と`orchestrate`は、token保護されたloopback Live Consoleを既定で起動し、完了画面をCtrl-Cまで保持します。consoleなしを明示した場合だけ`--no-live-console`または`--silent`を使います。
 
-When the plugin skill owns the workflow, it starts `live-console --port 0` first, opens the URL in Codex IAB, and later passes that same console through `--live-console-url <url>` to every `run` worker and every `orchestrate` job. This keeps the viewer ready long before a worker starts, avoids spawning a second console, and shows separate run IDs for the parallel jobs.
+### 一つのworkerに内部再委託を許可する
 
-A permission, approval, clarification, or target-selection question pauses the task without ending the console session. The IAB tab is handed off and kept open across the user turn. On resume, the parent reclaims and checks that viewer first, or starts and opens a replacement before continuing if the process or tab was lost.
+```sh
+node bin/cli-agent-runner.mjs run \
+  --target-cwd /path/to/jobsite \
+  --role Implementer \
+  --task-id local-team \
+  --epoch e1 \
+  --scope "scope:v1 paths=src/,tests/" \
+  --delegation-mode local_orchestrator \
+  --assignment "Own this coherent implementation and delegate only bounded internal helpers" \
+  --expected-output "One integrated implementation result" \
+  --runner claude-cli
+```
 
-Console-free operation is explicit-only. Use `--no-live-console` or its `--silent` alias only after the user has asked for silent mode, no console, or Live Console OFF. These flags cannot be combined with positive Live Console options.
+選択profileにhierarchy既定値がない場合、明示的なlocal-orchestrator modeはdirect child一段分を与えます。worker専用`delegate` commandはそのworkerへ注入され、通常の親shellから呼ぶとfail closedします。
 
-Runner-profile hierarchy is a permission ceiling, not a delegation command or sibling-job mechanism. Any profile may declare `defaultHierarchyDepth`; it limits descendants only. The parent alone decides whether to create an `orchestrate` jobs file, using elapsed-time savings and independent ownership rather than hierarchy permission. The bundled Grok profile sets the descendant ceiling to one direct-child level, and those children cannot delegate again. Bundled Codex and Claude profiles retain the no-descendant workflow default until `--delegation-mode local_orchestrator` explicitly selects their provider-neutral one-level broker route. Explicit hierarchy fields that replace a declared profile default require `--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary`; an unreasoned replacement is rejected before assignment state or process launch. Every profile still uses the same provider-neutral runner path; timeout and repository scope-guard failures remain authoritative, while successful execution is terminal.
+### 親が定義した独立jobを並列実行する
 
-See [docs/live-console.md](docs/live-console.md) for the event and IAB handoff contract, and [docs/runner-configuration.md](docs/runner-configuration.md) for custom profiles.
+version 1のjobs fileを作成します。
+
+```json
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "docs",
+      "role": "Docs Keeper",
+      "ownerScope": "README.md",
+      "assignment": "Update the public contract.",
+      "expectedOutput": "Updated README."
+    },
+    {
+      "id": "tests",
+      "role": "Test Runner",
+      "ownerScope": "tests/",
+      "assignment": "Add the scoped behavior tests.",
+      "expectedOutput": "Changed tests and results."
+    }
+  ]
+}
+```
+
+続けて実行します。
+
+```sh
+node bin/cli-agent-runner.mjs orchestrate \
+  --target-cwd /path/to/jobsite \
+  --task-id public-contract \
+  --epoch e1 \
+  --scope "scope:v1 paths=README.md,tests/" \
+  --runner grok-cli \
+  --jobs-file /path/to/jobs.json
+```
+
+各`ownerScope`はtop-level scope内にあり、同時実行job間で重複してはいけません。
+
+### Custom runnerとstate
+
+runner設定の優先順位は、bundled defaults、user config、jobsiteの`.cli-agent-runner/runners.json`、`CLI_AGENT_RUNNER_CONFIG`、`--runner-config`です。schemaと例は[`docs/runner-configuration.md`](docs/runner-configuration.md)を参照してください。
+
+workflow stateは対象Git repositoryの`.cli-agent-runner/`に置かれます。toolは対象repositoryのlocalな`.git/info/exclude`へこのdirectoryを追加し、tracked `.gitignore`を暗黙変更しません。
+
+event、token、IAB handoff、parent-child lineageの契約は[`docs/live-console.md`](docs/live-console.md)を参照してください。
+
+### セキュリティ境界
+
+- Live Consoleはloopbackへbindし、生成tokenを要求します。token付きURL全体をsensitiveなlocal telemetryとして扱い、commit、log、issue、remote messageへ貼らないでください。
+- runner profileは設定されたargumentと権限でlocal commandを実行します。third-party runner JSONは使用前に確認してください。
+- machine scopeはrepository pathを制限しますが、選択provider自身のpermission modelを置き換えません。
+- plugin sourceが正本です。`~/.codex/plugins/cache/`を直接patchしないでください。
+
+脆弱性報告は[`SECURITY.md`](SECURITY.md)を参照してください。
+
+### 開発
+
+```sh
+npm run check
+npm run test:cli
+npm run test:live
+```
+
+complete test suiteがrelease checkです。pull requestを作る前に[`CONTRIBUTING.md`](CONTRIBUTING.md)を確認してください。
+
+## License
+
+MIT License. Copyright (c) 2026 Makoto Suzuki.
