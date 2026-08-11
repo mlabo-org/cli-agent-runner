@@ -59,15 +59,17 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "stdout/stderr And Final-Message Capture",
     "Default-On Prestarted Token-Protected IAB Live Console",
     "Provider-Neutral Text And JSON Event Streaming",
-    "Bounded Runner-Profile Descendant Defaults",
+    "Protected Runner-Profile Delegation Ceilings",
     "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
     "Machine-Checkable Scope Guard",
   ]);
   assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
   assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
   assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
-  assert.match(manifest.interface.longDescription, /profiles declare a bounded descendant default that explicit hierarchy flags override/i);
-  assert.match(manifest.interface.longDescription, /Bundled Grok runs default to direct children only/i);
+  assert.match(manifest.interface.longDescription, /profiles declare a protected descendant permission ceiling/i);
+  assert.match(manifest.interface.longDescription, /parent owns that maximum depth, the assigned worker decides whether delegation is useful/i);
+  assert.match(manifest.interface.longDescription, /changing a declared profile default requires an admitted user, safety, scope, or capability reason/i);
+  assert.match(manifest.interface.longDescription, /Bundled Grok permits direct children by default/i);
   assert.match(manifest.interface.longDescription, /starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation/i);
   assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
   assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
@@ -118,9 +120,8 @@ test("agents metadata advertises the multi-CLI Live Console route", () => {
 
   assert.match(shortDescription, /IAB Live Console/i);
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
-  assert.match(defaultPrompt, /open its IAB Live Console before project work/i);
-  assert.match(defaultPrompt, /keep it ready/i);
+  assert.match(defaultPrompt, /open and keep its IAB Live Console before project work/i);
   assert.match(defaultPrompt, /launch a scoped Grok or CLI worker/i);
-  assert.match(defaultPrompt, /record execution, artifact-acceptance, and result-contract state/i);
-  assert.match(defaultPrompt, /Disable it only on explicit request/i);
+  assert.match(defaultPrompt, /preserve profile delegation ceilings unless a reasoned override is authorized/i);
+  assert.match(defaultPrompt, /record execution\/artifact\/result state/i);
 });

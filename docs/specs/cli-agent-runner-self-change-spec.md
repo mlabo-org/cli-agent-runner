@@ -76,6 +76,28 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      or unbounded depth is invalid. Descendants inherit supervision,
      cancellation, scope, depth, and permission limits and may narrow but never
      broaden them.
+   - Hierarchy fields define the parent-owned maximum permission ceiling. They
+     do not instruct a worker to delegate. A worker with remaining depth decides
+     whether descendants materially improve its assigned work; a worker with no
+     remaining depth must not delegate.
+   - The parent owns permission to delegate, maximum depth, concurrency, time,
+     budget, operation scope, and child permission-inheritance boundaries. The
+     assigned worker owns the decision whether to delegate inside those limits.
+     CLI Agent Runner must transmit the resolved policy without independently
+     deciding that delegation is unnecessary.
+   - Any runner profile may declare `defaultHierarchyDepth`. When hierarchy
+     fields are omitted, that profile value supplies the permission ceiling
+     through the common runner path. The bundled Grok profile declares one
+     direct-child level; bundled Codex and Claude retain the zero-depth workflow
+     default. Model-specific delegation suitability must be expressed as profile
+     configuration, including an explicit zero ceiling when appropriate, rather
+     than as an unrecorded per-run parent override.
+   - Explicit hierarchy fields that replace a declared profile default require
+     one admitted `hierarchy_override_reason`: `user_request`,
+     `safety_boundary`, `scope_boundary`, or `capability_boundary`. Missing or
+     invalid reason evidence must fail before assignment state is appended or a
+     child process launches. Restating the same profile ceiling is not an
+     override and must not require or accept an override reason.
    - Long-running or delegated assignments must carry supervision fields:
      `heartbeat_interval`, `heartbeat_deadline`, `max_silence`,
      `soft_timeout`, `hard_timeout`, `no_interrupt_until`, and
@@ -218,7 +240,8 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      config, jobsite `.cli-agent-runner/runners.json`,
      `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`.
    - A resolved profile consists of a direct executable, an argument array,
-     prompt transport, result source, stream format, and optional timeout.
+     prompt transport, result source, stream format, optional timeout, and
+     optional validated `defaultHierarchyDepth` permission ceiling.
      Supported stream formats are `text`, `ndjson`, and `messages-json`.
      Supported argument placeholders and config validity are enforced by
      `lib/runner-registry.mjs` and its contract tests.
@@ -278,6 +301,9 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - Missing explicitly selected config, invalid JSON or profiles, unknown
      runner IDs, invalid timeout, and non-machine-checkable runner scope must
      fail before assignment state is appended or the child process launches.
+   - A profile-default hierarchy replacement without an admitted override reason
+     must fail at the same pre-append and pre-launch boundary. This enforcement
+     is profile-generic and must not introduce a Grok provider-ID branch.
    - Authentication remains owned by each installed CLI. Runner JSON must not be
      treated as a credential store.
 
