@@ -1,7 +1,7 @@
 ---
 name: cli-agent-runner
 description: >-
-  Launch scoped Codex, Claude, Grok, or configured CLI workers through CLI Agent Runner and record separate execution, artifact-acceptance, and result-contract outcomes. Triggers: cli-agent-runner, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; excludes ordinary official subagents.
+  Run scoped Grok, Claude, Codex, or custom CLI workers with CLI Agent Runner and its Codex IAB Live Console. Trigger on cli-agent-runner, Live Console, Grok/Claude CLI, custom runner JSON, or .cli-agent-runner continuation; excludes ordinary official subagents.
 ---
 
 # CLI Agent Runner
@@ -12,7 +12,7 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 
 ## Trigger Boundary
 
-- Use this skill when the user explicitly names `CLI Agent Runner` or `cli-agent-runner`; asks for a CLI-spawned Codex, Claude, Grok, or configured worker; asks to capture a CLI worker's stdout, stderr, or final message; asks to add or use custom runner JSON; or asks to continue, audit, or repair existing `.cli-agent-runner` workflow state.
+- Use this skill when the user explicitly names `CLI Agent Runner` or `cli-agent-runner`; asks for its Live Console or IAB viewer; asks for a CLI-spawned Codex, Claude, Grok, or configured worker; asks to capture or watch a CLI worker's stdout, stderr, structured messages, or final message; asks to add or use custom runner JSON; or asks to continue, audit, or repair existing `.cli-agent-runner` workflow state.
 - The primary execution route is `run` or `orchestrate` with `--runner <id>`. Bundled IDs are `codex-cli`, `claude-cli`, and `grok-cli`; user-defined IDs use the same execution and result-normalization path.
 - Do not auto-route this skill for generic coding, ordinary official-subagent work, code review, supervision, or cancellation. Those tasks remain on their normal routes unless the user explicitly requests CLI process execution.
 - Do not trigger this skill merely because a repository contains `docs/codex`. Legacy `docs/codex` is a migration source, not proof that the current workflow is active.
@@ -31,6 +31,9 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - The first action after trigger is target resolution followed by project intake. Determine `invocation_cwd`, resolve the jobsite from the explicit target or default cwd rule, read the local `AGENTS.md` chain that applies to the jobsite when available, inspect the jobsite repository shape, check Git state, resolve `<git-root>`, inspect existing `.cli-agent-runner` state, inspect `.git/info/exclude`, and identify legacy `docs/codex` material only as migration input.
 - During source upgrade work, direct execution of the source CLI runs source-tree behavior: `node /Users/suzukimakoto/plugins/cli-agent-runner/bin/cli-agent-runner.mjs ...`. This validates source behavior, not installed plugin activation.
 - `run --runner <id>` resolves one validated runner profile, launches it with the jobsite as cwd, captures its configured result source plus process stdout/stderr, applies the declared scope guard, and derives the `process-runner-result` status, summary, exit code, signal, timeout, and failure fields.
+- `run --runner <id> --live-console` is the preferred observed-run route. It starts and owns the dependency-free viewer server on `127.0.0.1`, injects its generated ingest URL, publishes ordered activity, prints stable viewer/completion markers, retains the completed view, and closes the server after the owning controller sends SIGINT or SIGTERM.
+- The parent Codex session owns launching that one command in a persistent terminal, opening its printed viewer URL through the supported IAB browser route, waiting for the `live_console_run_finished: true` marker, and then stopping the owned terminal session. Do not call private Codex GUI IPC.
+- `live-console` plus `run --live-console-url <tokenized-loopback-url>` remains the advanced external-console route. Live Console transport state is separate from child execution, artifact acceptance, and result-contract status; a mid-run viewer transport failure must remain explicit rather than being reported as child failure or hidden by fallback.
 - A `process-runner-result` keeps three decisions independent: `status` reports child execution plus scope-guard outcome, `artifact_status` leaves artifact acceptance with the parent, and `result_contract_status` plus `result_contract_failure` report whether the worker's return format satisfies the required result contract.
 - An exit-zero in-scope child remains `status: completed` and `artifact_status: parent_acceptance_pending` when its report is `result_contract_status: nonconformant`. The CLI records the contract failure without populating process `failure` or converting the child execution or artifacts into failure. The parent must still inspect the artifacts and record a follow-up collection before verification accepts the workflow.
 - The parent owns the assignment, allowed scope, acceptance decision, and user-facing synthesis. The CLI child worker owns only the scoped transformation and its returned result material.
@@ -48,9 +51,20 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 
 - `config/runners.default.json` is the source-owned default registry and defines `codex-cli`, `claude-cli`, and `grok-cli` through the same schema used for custom runners.
 - `lib/runner-registry.mjs` owns configuration discovery, precedence, schema validation, placeholder expansion, and resolved `command` plus `args[]` production. `bin/cli-agent-runner.mjs` owns workflow routing, process execution, scope enforcement, and normalized result recording; it must not add provider-specific execution branches.
+- The `stream` profile field selects `text`, `ndjson`, or `messages-json`. The stream adapter owns decoding and event normalization independently of runner ID. The bundled Grok profile selects `messages-json` with Grok's Anthropic Messages-compatible streaming output; other profiles remain on their declared format.
 - User configuration may extend or override profiles through the user config, jobsite `.cli-agent-runner/runners.json`, `CLI_AGENT_RUNNER_CONFIG`, or `--runner-config`. The executable registry validator and its tests own accepted fields, merge order, placeholder rules, and failure predicates; `docs/runner-configuration.md` is the user-facing format reference.
 - Launch configured commands directly with an argument array and the jobsite cwd. Do not lower runner JSON into a shell command string.
 - Reject missing explicit config, invalid config, unknown runner IDs, and invalid launch specifications before appending runner state or spawning a process.
+
+## Live Console Contract
+
+- For normal live observation, launch the complete scoped runner command once with `--runner <id> --live-console` in a persistent terminal session. Use `--live-console-port <0-65535>` only when a specific local port is required; the default `0` selects a free port.
+- Read the printed `live_console_viewer_url` from that owned terminal session and immediately open it in Codex IAB using the applicable in-app browser capability. Do not ask the user to copy the URL, invent a token, echo it into remote output, or call private Codex GUI IPC.
+- Continue monitoring the same terminal while the IAB displays activity. When `live_console_run_finished: true` appears, inspect the retained final view and runner result, then send Ctrl-C to that owned terminal session and wait for clean process exit. Do not stop the server before final observation is complete.
+- The advanced external-console path is a separate `live-console --port <port>` session plus `run --live-console-url <url>`. The URL must use `http` on `127.0.0.1`, `localhost`, or `::1` and carry the generated token; remote and tokenless URLs are invalid. `--live-console` and `--live-console-url` must never be combined.
+- Events use the versioned provider-neutral envelope `version`, `runId`, `sequence`, `timestamp`, `type`, `stream`, `text`, and `data`. The process runner owns child lifecycle and raw byte capture; the stream adapter owns event decoding; the server owns authenticated bounded transport/state; the viewer owns presentation only; the CLI coordinator only connects those outputs.
+- `.cli-agent-runner/runner.md` remains the durable workflow/result record. Live Console history is deliberately in memory and bounded; do not promote it into a second workflow-state SSOT or persistent replay journal.
+- A provider can expose only the activity it actually emits. Verify the provider-specific stream in the active environment before claiming that provider's live behavior; do not use successful Grok or fixture evidence to claim Claude-specific streaming.
 
 ## Debugging Integrity Gate
 
@@ -181,6 +195,7 @@ Use the source CLI when the user wants to test source-tree behavior before plugi
    - Accept absolute paths only when they resolve inside the target cwd, then normalize them to repo-relative prefixes.
    - Preserve legacy runner compatibility only for simple path-only values such as `README.md`, `allowed/`, `bin/cli-agent-runner.mjs tests/workflow-state.test.mjs`, plus whole-repo aliases `.`, `repo`, and `whole repo`.
    - Keep broader human prose scopes for intake, assign, and collect rather than runner execution.
+   When live observation is requested, launch the scoped runner once with `run --runner <id> --live-console` in a persistent terminal, parse its printed `live_console_viewer_url`, and open that URL in Codex IAB without asking the user to copy it. Keep the command alive through `live_console_run_finished: true`, inspect the final viewer/result state, then send Ctrl-C to the owned session and wait for exit. Use the separate `live-console` plus `--live-console-url` flow only when an advanced external console is explicitly needed. This is a plugin-owned route, not a separate AgentScope dependency.
 10. Ensure generated assignments, runner prompts, runner packets, and handoff material carry the nested CLI Agent Runner preflight suppression rule, finite hierarchy rule, supervision and cancellation rule, workflow-state lifecycle rule, Coding Conduct Gate, worker-reference prompt for parent finalization, debugging integrity gate, and Meta-Cognitive Debug/Repair Gate when it fires. Explicit completed, blocked, or failed output bypasses the quiet-worker stale path and triggers immediate collection, integration, and recorded workflow-state disposition. Heartbeat/progress telemetry, interruption, and process exit are not completion or runtime-thread closure evidence. Keep the remaining nested-scope, stale-path, OSS reuse, first-principles debugging, no-hidden-fallback, task-finalization Contract Coverage, and context-impact gates enforced by the source CLI and its validators.
 11. Treat marketplace registration, `~/.codex/plugins/cache/` refresh, and Codex restart/new-thread activation as separate work unless the user explicitly includes them.
 

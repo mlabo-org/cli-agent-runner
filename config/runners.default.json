@@ -19,7 +19,8 @@
         "{prompt}"
       ],
       "prompt": "argument",
-      "result": "output-file"
+      "result": "output-file",
+      "stream": "text"
     },
     "claude-cli": {
       "description": "Claude Code non-interactive worker",
@@ -33,7 +34,8 @@
         "{prompt}"
       ],
       "prompt": "argument",
-      "result": "stdout"
+      "result": "stdout",
+      "stream": "text"
     },
     "grok-cli": {
       "description": "Grok CLI non-interactive worker",
@@ -44,13 +46,15 @@
         "--permission-mode",
         "auto",
         "--output-format",
-        "plain",
+        "streaming-messages-json",
+        "--include-partial-messages",
         "--verbatim",
         "--single",
         "{prompt}"
       ],
       "prompt": "argument",
-      "result": "stdout"
+      "result": "stdout",
+      "stream": "messages-json"
     }
   }
 }

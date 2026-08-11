@@ -30,6 +30,7 @@ test("bundled registry exposes Codex, Claude, and Grok through one profile schem
       assert.ok(Array.isArray(profile.args));
       assert.ok(["argument", "stdin"].includes(profile.prompt));
       assert.ok(["stdout", "stderr", "output-file"].includes(profile.result));
+      assert.ok(["text", "ndjson", "messages-json"].includes(profile.stream));
     }
   } finally {
     fixture.cleanup();
@@ -168,6 +169,10 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
       assert.equal(result.status, 0, result.stderr);
       const args = JSON.parse(readFileSync(capturePath, "utf8"));
       assert.ok(args.includes(expectedFlag));
+      if (runnerId === "grok-cli") {
+        assert.ok(args.includes("streaming-messages-json"));
+        assert.ok(args.includes("--include-partial-messages"));
+      }
       assert.ok(args.some((argument) => argument.includes("You are a CLI Agent Runner child worker")));
       const runner = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
       assert.match(runner, new RegExp(`runner: ${runnerId}`));
