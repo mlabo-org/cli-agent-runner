@@ -1098,9 +1098,10 @@ if (!prompt.includes("missed heartbeat -> soft ping/status request -> grace wait
 if (!prompt.includes("hierarchy_mode: none")) process.exit(12);
 if (!prompt.includes("heartbeat_interval: PT15M")) process.exit(13);
 if (!prompt.includes("cancel_reason_required: true")) process.exit(14);
-if (!prompt.includes("Return concise typed references relevant to this worker result for parent finalization")) process.exit(20);
-if (!prompt.includes("- finalization_references:")) process.exit(21);
-if (prompt.includes("A completed result must map every D-* accepted decision")) process.exit(22);
+if (prompt.includes("Return concise typed references relevant to this worker result for parent finalization")) process.exit(20);
+if (prompt.includes("- finalization_references:")) process.exit(21);
+if (prompt.includes("contract_coverage_owner: parent finalize")) process.exit(22);
+if (prompt.includes("A completed result must map every D-* accepted decision")) process.exit(23);
 const outputIndex = args.indexOf("--output-last-message");
 if (outputIndex !== -1) writeFileSync(args[outputIndex + 1], "runner prompt included feature_profile: runner.scope-guard and supervision\\n", "utf8");
 process.stdout.write("fake codex completed\\n");
@@ -1207,16 +1208,16 @@ test("completed codex-cli runner result is terminal without follow-up collection
   }
 });
 
-test("runner prompt makes exact expected_output authoritative and fallback sections conditional", () => {
+test("terminal runner prompt makes exact expected_output authoritative without finalization requirements", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
   try {
     intake(repo, {
-      task: "Repair a conflicting runner output contract",
+      task: "Read one file and return an exact sentinel",
       taskId: "output-contract",
       epoch: "e1",
       scope: "README.md",
-      workType: "debug",
+      workType: "documentation",
     });
     const fakeCodex = path.join(fakeBin, "codex");
     writeFileSync(fakeCodex, `#!/usr/bin/env node
@@ -1226,8 +1227,10 @@ const prompt = args[args.length - 1] || "";
 if (!prompt.includes("expected_output is the authoritative response-shape contract")) process.exit(7);
 if (!prompt.includes("When expected_output defines an exact format, return only that format and do not append fallback sections")) process.exit(8);
 if (!prompt.includes("When expected_output does not define a response format, use exactly these concise fallback sections")) process.exit(9);
-if (!prompt.includes("represent every required field within the authoritative expected_output response shape")) process.exit(10);
-if (prompt.includes("Return exactly these sections")) process.exit(11);
+if (prompt.includes("Return concise typed references relevant to this worker result for parent finalization")) process.exit(10);
+if (prompt.includes("- finalization_references:")) process.exit(11);
+if (prompt.includes("contract_coverage_owner: parent finalize")) process.exit(12);
+if (prompt.includes("Return exactly these sections")) process.exit(13);
 const outputIndex = args.indexOf("--output-last-message");
 if (outputIndex !== -1) writeFileSync(args[outputIndex + 1], "EXACT_RESULT", "utf8");
 process.stdout.write("fake codex completed\\n");
@@ -1247,7 +1250,7 @@ process.stdout.write("fake codex completed\\n");
       "--scope",
       "README.md",
       "--work-type",
-      "debug",
+      "documentation",
       "--assignment",
       "Return exactly EXACT_RESULT and do not add any other text",
       "--expected-output",
