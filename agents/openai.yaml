@@ -1,3 +1,3 @@
 display_name: CLI Agent Runner
-short_description: Launch scoped Codex CLI workers and normalize their process results.
-default_prompt: Use CLI Agent Runner to launch a scoped Codex CLI worker with codex exec, capture its result, and record process-runner-result state.
+short_description: Launch scoped Codex, Claude, Grok, or configured CLI workers.
+default_prompt: Use CLI Agent Runner to launch a scoped built-in or JSON-configured CLI worker, capture its result, and record process-runner-result state.

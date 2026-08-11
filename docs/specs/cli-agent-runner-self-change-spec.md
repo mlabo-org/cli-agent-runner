@@ -6,7 +6,7 @@ behavior. It is not workflow state and must not be treated as a generated
 
 ## Confirmed Boundary
 
-Items 1-10 are CLI Agent Runner self changes. Item 11 is external legacy cleanup.
+Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup.
 
 1. State directory
    - CLI Agent Runner runtime/workflow state belongs under `<git-root>/.cli-agent-runner/`.
@@ -209,7 +209,28 @@ Items 1-10 are CLI Agent Runner self changes. Item 11 is external legacy cleanup
      contract. They cannot broaden scope, depth, permissions, or cancellation
      authority.
 
-11. Legacy migration and cleanup
+11. Configurable CLI runner registry
+   - Standard runner profiles are `codex-cli`, `claude-cli`, and `grok-cli`.
+     Their source-owned definitions live in `config/runners.default.json`; the
+     process executor must not hard-code provider branches.
+   - Users may add new runner IDs or override standard profile fields through
+     versioned runner JSON. Configuration precedence is bundled defaults, user
+     config, jobsite `.cli-agent-runner/runners.json`,
+     `CLI_AGENT_RUNNER_CONFIG`, then `--runner-config`.
+   - A resolved profile consists of a direct executable, an argument array,
+     prompt transport, result source, and optional timeout. Supported argument
+     placeholders and config validity are enforced by
+     `lib/runner-registry.mjs` and its contract tests.
+   - Runner commands are spawned directly without a shell, always use the
+     jobsite as process cwd, inherit the current environment, and share the
+     existing scope guard and normalized `process-runner-result` path.
+   - Missing explicitly selected config, invalid JSON or profiles, unknown
+     runner IDs, invalid timeout, and non-machine-checkable runner scope must
+     fail before assignment state is appended or the child process launches.
+   - Authentication remains owned by each installed CLI. Runner JSON must not be
+     treated as a credential store.
+
+12. Legacy migration and cleanup
    - Existing legacy locations are cleaned through an explicit migration workflow,
      not by silent deletion or broad automatic rewriting.
    - The migration workflow must perform a preflight backup before destructive or

@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "runners": {
+    "codex-cli": {
+      "description": "Codex CLI non-interactive worker",
+      "command": "codex",
+      "args": [
+        "exec",
+        "--cd",
+        "{cwd}",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        "approval_policy=\"never\"",
+        "--color",
+        "never",
+        "--output-last-message",
+        "{output_file}",
+        "{prompt}"
+      ],
+      "prompt": "argument",
+      "result": "output-file"
+    },
+    "claude-cli": {
+      "description": "Claude Code non-interactive worker",
+      "command": "claude",
+      "args": [
+        "--print",
+        "--output-format",
+        "text",
+        "--permission-mode",
+        "acceptEdits",
+        "{prompt}"
+      ],
+      "prompt": "argument",
+      "result": "stdout"
+    },
+    "grok-cli": {
+      "description": "Grok CLI non-interactive worker",
+      "command": "grok",
+      "args": [
+        "--cwd",
+        "{cwd}",
+        "--permission-mode",
+        "auto",
+        "--output-format",
+        "plain",
+        "--verbatim",
+        "--single",
+        "{prompt}"
+      ],
+      "prompt": "argument",
+      "result": "stdout"
+    }
+  }
+}

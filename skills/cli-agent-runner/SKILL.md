@@ -1,7 +1,7 @@
 ---
 name: cli-agent-runner
 description: >-
-  Launch scoped Codex CLI workers with codex exec, capture stdout/stderr and the final message, and record process-runner-result in .cli-agent-runner. Trigger on CLI Agent Runner, cli-agent-runner, CLI subagent execution, or continuation/audit/repair of its state. Excludes generic official-subagent work.
+  Launch scoped Codex, Claude, Grok, or configured CLI workers and record process-runner-result state in .cli-agent-runner. Trigger on CLI Agent Runner, cli-agent-runner, Claude/Grok CLI workers, custom runner JSON, or workflow continuation/audit/repair. Excludes ordinary official-subagent work.
 ---
 
 # CLI Agent Runner
@@ -12,10 +12,9 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 
 ## Trigger Boundary
 
-- Use this skill when the user explicitly names `CLI Agent Runner` or `cli-agent-runner`; asks for a CLI-spawned Codex worker or CLI subagent; asks to capture a Codex CLI worker's stdout, stderr, or final message; or asks to continue, audit, or repair existing `.cli-agent-runner` workflow state.
-- The primary execution route is `run` or `orchestrate` with `--runner codex-cli`. It launches `codex exec` as an OS child process and records a normalized `process-runner-result` packet.
+- Use this skill when the user explicitly names `CLI Agent Runner` or `cli-agent-runner`; asks for a CLI-spawned Codex, Claude, Grok, or configured worker; asks to capture a CLI worker's stdout, stderr, or final message; asks to add or use custom runner JSON; or asks to continue, audit, or repair existing `.cli-agent-runner` workflow state.
+- The primary execution route is `run` or `orchestrate` with `--runner <id>`. Bundled IDs are `codex-cli`, `claude-cli`, and `grok-cli`; user-defined IDs use the same execution and result-normalization path.
 - Do not auto-route this skill for generic coding, ordinary official-subagent work, code review, supervision, or cancellation. Those tasks remain on their normal routes unless the user explicitly requests CLI process execution.
-- This initial independent release supports only the `codex-cli` runner. Do not claim Claude CLI, Grok CLI, or another provider is implemented.
 - Do not trigger this skill merely because a repository contains `docs/codex`. Legacy `docs/codex` is a migration source, not proof that the current workflow is active.
 - Do not perform legacy migration apply, plugin cache refresh, marketplace updates, or restart/reload actions unless the active user request includes that boundary.
 
@@ -31,7 +30,7 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - Do not auto-edit the repository's tracked `.gitignore` to hide CLI Agent Runner state. Edit tracked ignore policy only when the user explicitly requests that repository policy change.
 - The first action after trigger is target resolution followed by project intake. Determine `invocation_cwd`, resolve the jobsite from the explicit target or default cwd rule, read the local `AGENTS.md` chain that applies to the jobsite when available, inspect the jobsite repository shape, check Git state, resolve `<git-root>`, inspect existing `.cli-agent-runner` state, inspect `.git/info/exclude`, and identify legacy `docs/codex` material only as migration input.
 - During source upgrade work, direct execution of the source CLI runs source-tree behavior: `node /Users/suzukimakoto/plugins/cli-agent-runner/bin/cli-agent-runner.mjs ...`. This validates source behavior, not installed plugin activation.
-- `run --runner codex-cli` invokes `codex exec` with the jobsite as cwd, captures process stdout/stderr and `--output-last-message`, applies the declared scope guard, and derives the `process-runner-result` status, summary, exit code, signal, timeout, and failure fields.
+- `run --runner <id>` resolves one validated runner profile, launches it with the jobsite as cwd, captures its configured result source plus process stdout/stderr, applies the declared scope guard, and derives the `process-runner-result` status, summary, exit code, signal, timeout, and failure fields.
 - The parent owns the assignment, allowed scope, acceptance decision, and user-facing synthesis. The CLI child worker owns only the scoped transformation and its returned result material.
 - Installed plugin activation is controlled by refreshing the plugin cache from validated source and then restarting Codex or opening a new thread when required. Do not claim a source CLI run proves cached plugin activation.
 - Maintain `<git-root>/.cli-agent-runner/` as the workflow SSOT for the active job.
@@ -42,6 +41,14 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - After a subagent result is integrated, after hard-timeout/failure/blocker handling, or after a stale premise or scope change, the parent must use `collect --lifecycle-disposition state_retired --cancel-reason <allowed-reason>` when no further workflow use is expected, or `collect --lifecycle-disposition continuation_expected` when an explicitly scoped continuation remains necessary.
 - A subagent's explicit completed, blocked, or failed result is not silence. It must immediately trigger parent collection, integration, and one of those workflow-state dispositions; `heartbeat_deadline` and `no_interrupt_until` protect only quiet workers that have not returned a result.
 - Treat lifecycle fields as workflow state only. The CLI Agent Runner CLI does not interrupt, close, delete, or reclaim runtime threads; interruption and process exit are not runtime-thread closure evidence.
+
+## Runner Registry Contract
+
+- `config/runners.default.json` is the source-owned default registry and defines `codex-cli`, `claude-cli`, and `grok-cli` through the same schema used for custom runners.
+- `lib/runner-registry.mjs` owns configuration discovery, precedence, schema validation, placeholder expansion, and resolved `command` plus `args[]` production. `bin/cli-agent-runner.mjs` owns workflow routing, process execution, scope enforcement, and normalized result recording; it must not add provider-specific execution branches.
+- User configuration may extend or override profiles through the user config, jobsite `.cli-agent-runner/runners.json`, `CLI_AGENT_RUNNER_CONFIG`, or `--runner-config`. The executable registry validator and its tests own accepted fields, merge order, placeholder rules, and failure predicates; `docs/runner-configuration.md` is the user-facing format reference.
+- Launch configured commands directly with an argument array and the jobsite cwd. Do not lower runner JSON into a shell command string.
+- Reject missing explicit config, invalid config, unknown runner IDs, and invalid launch specifications before appending runner state or spawning a process.
 
 ## Debugging Integrity Gate
 
@@ -165,7 +172,7 @@ Use the source CLI when the user wants to test source-tree behavior before plugi
    After integrating worker results and assembling complete task-wide coverage, run:
    `node /Users/suzukimakoto/plugins/cli-agent-runner/bin/cli-agent-runner.mjs finalize --target-cwd <jobsite> --task-id <id> --epoch <epoch> --scope <scope> --work-type <auto|documentation|source-change|debug> --contract-coverage required --decision-coverage <D-coverage> --completion-coverage <C-coverage> --source-spec-coverage <typed-ref>`.
    `finalize` validates all active D-*/C-*/source-spec coverage before appending the distinct `task-finalization` packet. If validation fails, stop and correct the evidence; do not treat worker collection as task completion.
-   When `run --runner codex-cli` is used, treat `--scope` as runner machine input:
+   When `run --runner <id>` is used, treat `--scope` as runner machine input:
    - Stop before appending `.cli-agent-runner/runner.md` or launching the runner when `--scope` is empty, ambiguous prose, negative/exclusion wording, or otherwise not machine-checkable.
    - Use quoted `--scope "scope:v1 all"` for the whole repo.
    - Use quoted `--scope "scope:v1 paths=README.md,bin/cli-agent-runner.mjs,tests/"` for an affirmative comma-separated repo-relative prefix list.
@@ -204,7 +211,7 @@ If source CLI output still names legacy `docs/codex`, treat that as source imple
 - Do not auto-edit tracked `.gitignore` to hide `.cli-agent-runner/`. Use target `.git/info/exclude` for the local workflow-state ignore rule.
 - Do not edit legacy `docs/codex` as active workflow state. Edit it only when the active task is an explicit migration, cleanup, or legacy-document maintenance task.
 - Preserve unrelated user or worker changes. If another change appears in scope, work around it or report the conflict; do not revert it.
-- The MVP CLI uses Node.js standard libraries only. Do not add dependencies to run intake, handoff, or doctor.
+- The CLI uses Node.js standard libraries only. Do not add dependencies to run intake, runner configuration, handoff, or doctor.
 
 ## Source And Cache Boundary
 
