@@ -1177,7 +1177,6 @@ ${packet.focusScope ? `- Your enforceable child scope is focus_scope ${packet.fo
 ${renderDelegationPrompt(packet)}
 ${CODING_CONDUCT_GATE_NAME}:
 ${renderCodingConductFields()}
-${renderRunnerPromptContractCoverageGate(packet)}
 ${renderRunnerPromptMetacognitiveGate(packet)}
 
 ${renderSupervisionPromptSection(packet)}
@@ -1194,7 +1193,7 @@ function renderRunnerOutputContract(packet) {
   return `Final response contract:
 - expected_output is the authoritative response-shape contract.
 - When expected_output defines an exact format, return only that format and do not append fallback sections.
-- Satisfy every applicable content requirement, including gate-required fields and relevant typed references, within that authoritative format.
+- Satisfy every applicable content requirement, including any gate-required fields, within that authoritative format.
 - If an exact expected_output cannot represent an applicable required field, report the contract conflict as a blocker instead of silently choosing a competing format.
 - When expected_output does not define a response format, use exactly these concise fallback sections:
 - findings:
@@ -1202,7 +1201,6 @@ function renderRunnerOutputContract(packet) {
 - verification:
 - blockers:
 - unresolved_assumptions:
-- ${FINALIZATION_REFERENCES_FIELD}:
 ${renderMetacognitiveReturnSections(packet)}
 - next:
 `;
@@ -3932,13 +3930,6 @@ function renderContractCoverageResultFields(packet) {
 - decision_coverage: ${packet.decisionCoverage || "not provided"}
 - completion_coverage: ${packet.completionCoverage || "not provided"}
 - source_spec_coverage: ${packet.sourceSpecCoverage || "not provided"}`;
-}
-
-function renderRunnerPromptContractCoverageGate(_packet) {
-  return `
-${CONTRACT_COVERAGE_GATE_NAME}:
-- contract_coverage_owner: parent finalize
-- ${WORKER_FINALIZATION_REFERENCE_PROMPT}`;
 }
 
 function renderSupervisionSection() {

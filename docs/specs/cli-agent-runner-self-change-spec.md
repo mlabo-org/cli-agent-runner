@@ -190,17 +190,22 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
 9. Worker-result collection and task finalization
    - `expected_output` owns any explicitly declared worker-response shape. The
      generated sectioned worker-result format is a fallback only when
-     `expected_output` does not define a response format. Applicable gate content
-     and result-relevant typed references must be represented within an explicit
-     response shape; an impossible combination is a reported contract blocker,
-     not permission to choose silently between competing formats.
+     `expected_output` does not define a response format. Normal terminal
+     `run` and `orchestrate` prompts carry applicable producer and gate content,
+     but they do not inject manual Contract Coverage or
+     `finalization_references` requirements. An impossible combination between
+     the explicit response shape and an actually applicable gate is a reported
+     contract blocker, not permission to choose silently between competing
+     formats.
    - `collect` records a `worker-result-collection` packet plus its
      workflow-state-only lifecycle disposition. Completed collection does not
      require complete task-wide D-*/C-*/source-spec coverage, and multiple
      worker results may be collected before the task is finalized.
    - A collection may carry `finalization_references` relevant to that worker's
-     result. Generated assignment and runner prompts ask workers for concise
-     typed references, while the parent owns the complete task-wide map.
+     result. Generated assignments and handoff material for an explicitly
+     managed collection/finalization workflow ask workers for concise typed
+     references, while the parent owns the complete task-wide map. Normal
+     terminal runner prompts do not ask for those references.
    - `finalize` is the only command that records a modern
      `task-finalization` packet. It requires the current `task_id`, `epoch`, and
      `scope`, validates complete active decision, completion-condition, and
