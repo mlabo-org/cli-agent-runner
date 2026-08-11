@@ -17,10 +17,12 @@ Live Console is default-on. Omission is not an OFF signal; only an explicit sile
 1. When the plugin skill is selected, launch `live-console --port 0` in a persistent terminal before target intake, assignment construction, or worker launch.
 2. Read `live_console_viewer_url` and open it in Codex IAB immediately. The empty viewer is the ready/standby state.
 3. Launch each later scoped worker with `run --runner <id> --live-console-url <url>` so it publishes into the console that is already open.
-4. Watch the selected run's ordered activity and details. The page can pause automatic scrolling without pausing the worker.
+4. Watch the selected run's ordered activity and details. The timeline groups consecutive textless provider envelopes, renders the latest 120 filtered events by default, and exposes older history explicitly. `All`, `Signal`, and `Errors` filters affect presentation only; the bounded run state and exact event envelopes remain available. Follow-latest can be disabled by scrolling away and restored without pausing the worker.
 5. After each runner result, inspect the final state and keep the console ready for later work in the same task. Send Ctrl-C to the standalone console session and wait for exit when the task ends or the user stops it.
 
 The CLI deliberately prints a normal localhost URL rather than calling private Codex GUI IPC. The parent Codex session owns opening that URL in IAB.
+
+The source server reads the numeric `[desktop].codeFontSize` value from the active Codex `config.toml`, accepts values from 10 through 32, and passes only that validated number as viewer presentation metadata. The Live Console uses it as `--console-code-font-size`; log text and structured/raw payloads render at that exact size. Missing or invalid settings use the source-owned 16px default. This is an explicit server-to-viewer handoff because a loopback IAB page does not inherit Codex app CSS variables.
 
 For direct CLI use, `run|orchestrate --runner <id>` starts an owned console by default, before the assignment is appended or the worker launches. It prints the viewer URL, retains the completed page after `live_console_run_finished: true`, and stops on SIGINT or SIGTERM. `--live-console` remains an optional compatibility spelling and is no longer required.
 

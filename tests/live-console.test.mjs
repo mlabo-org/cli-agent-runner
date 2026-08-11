@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { LIVE_EVENT_VERSION, createLiveEvent, startLiveConsole } from "../lib/live-console.mjs";
+import { LIVE_EVENT_VERSION, createLiveEvent, parseCodexCodeFontSize, startLiveConsole } from "../lib/live-console.mjs";
 
 test("Live Console serves its viewer and protects ingest and read APIs with its generated token", async () => {
   const fixture = makeViewerFixture();
@@ -110,6 +110,25 @@ test("Live Console event creation requires the complete versioned envelope", () 
     () => createLiveEvent({ runId: "run-invalid", sequence: 0, timestamp: "2026-08-11T00:00:00.000Z", type: "output" }),
     /sequence/,
   );
+});
+
+test("Live Console exposes a validated Codex desktop code font size to the viewer", async () => {
+  const fixture = makeViewerFixture();
+  const configPath = path.join(fixture.root, "config.toml");
+  writeFileSync(configPath, "[desktop]\ncodeFontSize = 18\n[desktop.appearanceDarkChromeTheme]\ncodeFontSize = 27\n");
+  const console = await startLiveConsole({ viewerRoot: fixture.root, codexConfigPath: configPath });
+  try {
+    assert.equal(console.codeFontSize, 18);
+    assert.equal(new URL(console.viewerUrl).searchParams.get("codeFontSize"), "18");
+    assert.equal(new URL(console.eventsUrl).searchParams.has("codeFontSize"), false);
+  } finally {
+    await console.close();
+    fixture.cleanup();
+  }
+
+  assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 9\n"), null);
+  assert.equal(parseCodexCodeFontSize("[other]\ncodeFontSize = 22\n"), null);
+  assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 18.5 # preferred\n"), 18.5);
 });
 
 function event(runId, sequence, overrides = {}) {
