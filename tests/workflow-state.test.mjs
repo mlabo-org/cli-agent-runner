@@ -14,7 +14,7 @@ const CODING_CONDUCT_RULES =
   /coding_conduct_rules: .*GitHub\/npm OSS.*do not reimplement.*first principles.*fallback implementations.*main-flow errors/;
 
 function contractCoverageArgs(taskId) {
-  const decisions = Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
+  const decisions = Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
   const completions = Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}`);
   return [
     "--contract-coverage",
@@ -137,7 +137,7 @@ test("finalize requires exact delimiter-aware coverage IDs while preserving colo
   const repo = makeTempGitRepo();
   try {
     const taskId = "coverage-boundary";
-    const decisionIds = Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
+    const decisionIds = Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
     const completionIds = Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}`);
     intake(repo, { taskId, epoch: "e1", scope: "README.md", workType: "documentation" });
 
@@ -165,7 +165,7 @@ test("finalize requires exact delimiter-aware coverage IDs while preserving colo
       "path:.cli-agent-runner/task.md",
     ]);
     assert.notEqual(suffixedFake.status, 0);
-    assert.match(suffixedFake.stderr, /decision_coverage\.D-coverage-boundary-008/);
+    assert.match(suffixedFake.stderr, /decision_coverage\.D-coverage-boundary-009/);
     assert.equal(existsSync(path.join(repo, ".cli-agent-runner", "runner.md")), false, "rejected finalize must be atomic");
 
     const exactMappings = runCli([
@@ -204,7 +204,7 @@ test("finalize keeps prefix-collision coverage IDs independently required", () =
   const repo = makeTempGitRepo();
   try {
     const taskId = "prefix";
-    const generatedDecisionIds = Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
+    const generatedDecisionIds = Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
     const completionIds = Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}`);
     intake(repo, { taskId, epoch: "e1", scope: "README.md", workType: "documentation" });
 
@@ -249,7 +249,7 @@ test("finalize rejects skip and skipped test results as typed completion evidenc
     const repo = makeTempGitRepo();
     try {
       const taskId = `typed-${resultValue}`;
-      const decisionIds = Array.from({ length: 8 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
+      const decisionIds = Array.from({ length: 9 }, (_, index) => `D-${taskId}-${String(index + 1).padStart(3, "0")}`);
       const completionIds = Array.from({ length: 10 }, (_, index) => `C-${taskId}-${String(index + 1).padStart(3, "0")}`);
       intake(repo, { taskId, epoch: "e1", scope: "README.md", workType: "documentation" });
 
@@ -526,14 +526,14 @@ test("assignment validation does not accept fenced fake identity fields", () => 
     const assignmentsPath = path.join(repo, ".cli-agent-runner", "assignments.md");
     const assignments = readFileSync(assignmentsPath, "utf8");
     const corrupted = assignments.replace(
-      /(## Implementer[\s\S]*?)- task_id: assignment-fence\n/,
-      "$1```markdown\n- task_id: assignment-fence\n```\n",
+      /^- task_id: assignment-fence$/m,
+      "```markdown\n- task_id: assignment-fence\n```",
     );
     writeFileSync(assignmentsPath, corrupted, "utf8");
 
     const verify = runCli(["verify-assignments", "--target-cwd", repo]);
     assert.notEqual(verify.status, 0);
-    assert.match(verify.stdout, /Implementer\.task_id/);
+    assert.match(verify.stdout, /assignments.*task_id|task_id.*assignments/i);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -562,22 +562,48 @@ test("doctor verifies the target git info exclude without mutating it", () => {
   }
 });
 
-test("intake describes fixed roles as scaffold, not resident agents", () => {
+test("roles are caller-defined and no roster is preallocated", () => {
   const repo = makeTempGitRepo();
   try {
-    intake(repo, { taskId: "role-scaffold", epoch: "e1", scope: "README.md" });
+    intake(repo, { taskId: "free-role", epoch: "e1", scope: "README.md" });
     const assignments = readState(repo, "assignments.md");
-    assert.match(assignments, /# Role Assignment Scaffold/);
-    assert.match(assignments, /not resident agents or spawned workers/);
-    assert.equal([...assignments.matchAll(/^## (?!Debugging|Coding Conduct|Meta-Cognitive|Nested|Subagent)(.+)$/gm)].length, 14);
-    assert.match(assignments, /- status: scaffolded/);
+    assert.match(assignments, /# Dynamic Role Assignments/);
+    assert.match(assignments, /^- role_policy: caller_defined$/m);
+    assert.match(assignments, /^- role_constraint: non-empty single-line$/m);
+    assert.match(assignments, /^- preallocated_roles: none$/m);
+    assert.doesNotMatch(assignments, /^## Implementer$/m);
+
+    const customRole = "SwiftUI VoiceOver Specialist";
+    const assigned = runCli([
+      "assign", "--target-cwd", repo,
+      "--role", customRole,
+      "--task-id", "free-role",
+      "--epoch", "e1",
+      "--scope", "README.md",
+      "--assignment", "Own the accessibility-specific change",
+      "--expected-output", "assignment packet",
+    ]);
+    assert.equal(assigned.status, 0, assigned.stderr);
+    assert.match(readState(repo, "runner.md"), new RegExp(`^- role: ${customRole}$`, "m"));
+
+    const multiline = runCli([
+      "assign", "--target-cwd", repo,
+      "--role", "Line One\nLine Two",
+      "--task-id", "free-role",
+      "--epoch", "e1",
+      "--scope", "README.md",
+      "--assignment", "invalid role probe",
+      "--expected-output", "none",
+    ]);
+    assert.notEqual(multiline.status, 0);
+    assert.match(multiline.stderr, /--role must be a single line/);
 
     const verify = runCli(["verify-assignments", "--target-cwd", repo]);
     assert.equal(verify.status, 0, verify.stdout + verify.stderr);
 
     const doctor = runCli(["doctor", "--target-cwd", repo]);
     assert.equal(doctor.status, 0, doctor.stdout + doctor.stderr);
-    assert.match(doctor.stdout, /14 role assignment scaffold sections present/);
+    assert.match(doctor.stdout, /caller-defined role policy present; no role roster required/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
@@ -588,7 +614,6 @@ test("intake generates supervision guidance in assignments and handoff", () => {
   try {
     intake(repo, { taskId: "supervision-intake", epoch: "e1", scope: "README.md" });
     const assignments = readState(repo, "assignments.md");
-    const implementer = getRoleSection(assignments, "Implementer");
     assert.match(assignments, /## Subagent Supervision Contract/);
     assert.match(assignments, /Silence before heartbeat deadline is neutral, not failure/);
     assert.match(assignments, /Heartbeat is telemetry, not completion evidence/);
@@ -599,8 +624,8 @@ test("intake generates supervision guidance in assignments and handoff", () => {
     assert.match(assignments, /## Coding Conduct Gate/);
     assert.match(assignments, /coding_conduct_gate: Coding Conduct Gate/);
     assert.match(assignments, CODING_CONDUCT_RULES);
-    assertSupervisionSchema(implementer);
-    assert.match(implementer, CODING_CONDUCT_RULES);
+    assertSupervisionSchema(assignments);
+    assert.match(assignments, CODING_CONDUCT_RULES);
 
     const handoff = readState(repo, "handoff.md");
     assert.match(handoff, /^Supervision:$/m);
@@ -818,7 +843,7 @@ test("runtime-thread closure flags are rejected at the global command boundary",
   }
 });
 
-test("feature profiles are optional overlays and do not change the fixed 14-role scaffold", () => {
+test("feature profiles are optional overlays and do not preallocate roles", () => {
   const repo = makeTempGitRepo();
   try {
     intake(repo, { taskId: "profile-scaffold", epoch: "e1", scope: "README.md" });
@@ -828,7 +853,7 @@ test("feature profiles are optional overlays and do not change the fixed 14-role
       "--target-cwd",
       repo,
       "--role",
-      "Implementer",
+      "Workflow State Safety Owner",
       "--task-id",
       "profile-scaffold",
       "--epoch",
@@ -845,7 +870,8 @@ test("feature profiles are optional overlays and do not change the fixed 14-role
     assert.equal(assigned.status, 0, assigned.stderr);
 
     const assignments = readState(repo, "assignments.md");
-    assert.equal([...assignments.matchAll(/^## (?!Debugging|Coding Conduct|Meta-Cognitive|Nested|Subagent)(.+)$/gm)].length, 14);
+    assert.match(assignments, /^- preallocated_roles: none$/m);
+    assert.doesNotMatch(assignments, /^## Workflow State Safety Owner$/m);
     assert.doesNotMatch(assignments, /workflow\.state-safety/);
     assert.doesNotMatch(assignments, /^## workflow\.state-safety$/m);
 
@@ -1655,7 +1681,7 @@ test("normalize adds missing hierarchy and machine supervision fields to stale g
     assert.match(normalized.stdout, /Updated: assignments\.md/);
     assert.match(normalized.stdout, /Updated: runner\.md/);
 
-    assertSupervisionSchema(getRoleSection(readState(repo, "assignments.md"), "Implementer"));
+    assertSupervisionSchema(readState(repo, "assignments.md"));
     assert.match(readState(repo, "runner.md"), /type: assignment[\s\S]*hierarchy_mode: none/);
     assert.match(readState(repo, "runner.md"), /type: assignment[\s\S]*heartbeat_interval: PT15M/);
     assert.equal(runCli(["verify-assignments", "--target-cwd", repo]).status, 0);
@@ -2892,17 +2918,4 @@ function assertSupervisionSchema(text) {
   assert.match(text, /^- hard_timeout: PT120M$/m);
   assert.match(text, /^- no_interrupt_until: PT30M$/m);
   assert.match(text, /^- cancel_reason_required: true$/m);
-}
-
-function getRoleSection(text, role) {
-  const startMatch = new RegExp(`^## ${escapeRegExp(role)}$`, "m").exec(text);
-  if (!startMatch) return "";
-  const start = startMatch.index;
-  const next = text.slice(start + startMatch[0].length).search(/^## /m);
-  if (next === -1) return text.slice(start);
-  return text.slice(start, start + startMatch[0].length + next);
-}
-
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

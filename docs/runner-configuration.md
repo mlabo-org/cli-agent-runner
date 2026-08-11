@@ -50,10 +50,12 @@ Available argument placeholders are `{prompt}`, `{cwd}`, and `{output_file}`. Th
 
 ## Running a profile
 
+`--role` is a caller-defined responsibility label, not an enum. Any non-empty single-line value is valid, and CLI Agent Runner preallocates no role roster.
+
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
-  --role Implementer \
+  --role "Gemini Integration Owner" \
   --task-id my-task \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \

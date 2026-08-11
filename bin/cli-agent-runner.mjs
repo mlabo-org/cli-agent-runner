@@ -247,22 +247,8 @@ const COMPLETION_STATUS_SYNONYMS = new Set([
   "okay",
 ]);
 
-const ROLES = [
-  "Intake",
-  "Repo Mapper",
-  "Requirements",
-  "Planner",
-  "Architect",
-  "Implementer",
-  "Test Runner",
-  "Reviewer",
-  "Risk Guard",
-  "Docs Keeper",
-  "UX",
-  "Dependency",
-  "DevOps",
-  "Auditor",
-];
+const ROLE_POLICY = "caller_defined";
+const ROLE_CONSTRAINT = "non-empty single-line";
 
 const REQUIRED_FILES = [
   "README.md",
@@ -1221,7 +1207,7 @@ function renderDelegationPrompt(packet) {
 - Delegate only when a bounded internal helper materially improves this assignment; do not repeat the parent task split.
 - The helper inherits this worker's authority scope. Use --focus-scope only to narrow its local focus inside that authority.
 - Give sibling helpers unique stable IDs and non-overlapping focus scopes; each helper owns its focus end to end.
-- Choose --role from: ${ROLES.join(", ")}.
+- Choose a concise caller-defined --role that names the helper's actual responsibility; there is no built-in role roster.
 - Never launch a descendant CLI directly. Use this broker command and wait for its result before integrating your own final output:
   node ${JSON.stringify(cliPath)} delegate --delegate-id <stable-id> --role <role> --focus-scope <machine-scope> --assignment <text> --expected-output <text>`;
 }
@@ -1391,7 +1377,7 @@ Read these planning files in order:
 2. \`task.md\`: active task contract.
 3. \`todo.md\`: executable checklist.
 4. \`decisions.md\`: accepted decisions.
-5. \`assignments.md\`: fixed 14-role assignment scaffold; these sections are not resident agents.
+5. \`assignments.md\`: caller-defined role policy and assignment packet contract; no role roster is preallocated.
 6. \`audit.md\`: checks and warnings.
 7. \`handoff.md\`: prompt for the next worker.
 
@@ -1429,7 +1415,7 @@ function taskCompletionConditions(context) {
   const prefix = `C-${context.taskId}`;
   return [
     { id: `${prefix}-001`, text: `Eight planning files exist in \`${STATE_DIR_NAME}\`.` },
-    { id: `${prefix}-002`, text: "Fixed 14-role assignment scaffold sections include `role`, `status`, `task_id`, `epoch`, `scope`, `assignment`, `expected_output`, and `lifecycle`." },
+    { id: `${prefix}-002`, text: "Caller-defined role policy accepts every non-empty single-line role and preallocates no role roster." },
     { id: `${prefix}-003`, text: `Current task state and each new worker-result-collection packet carry lifecycle_contract_version=${LIFECYCLE_CONTRACT_VERSION}; current packets cannot fall back to unknown_legacy.` },
     { id: `${prefix}-004`, text: "Each generated child-worker prompt, assignment, handoff, and runner packet carries the nested CLI Agent Runner preflight suppression rule." },
     { id: `${prefix}-005`, text: `Each generated child-worker prompt, assignment, handoff, and modern runner packet carries the ${SUPERVISION_CONTRACT_NAME}.` },
@@ -1476,7 +1462,7 @@ function renderTodo(context) {
 
 - [x] ${context.taskId}.1 Run CLI Agent Runner intake for \`${context.cwd}\`.
 - [x] ${context.taskId}.2 Generate or update \`${STATE_DIR_NAME}\` planning files.
-- [x] ${context.taskId}.3 Create or update the fixed 14-role assignment scaffold for epoch \`${context.epoch}\`.
+- [x] ${context.taskId}.3 Create or update the caller-defined role contract for epoch \`${context.epoch}\`.
 - [ ] ${context.taskId}.4 Execute work inside scope \`${context.scope}\`.
 - [ ] ${context.taskId}.5 Run verification and update \`audit.md\`.
 `;
@@ -1535,6 +1521,13 @@ function renderDecisions(context) {
 ${renderCodingConductFields()}
 - impact: coding and debug assignments must prefer mature OSS reuse over reimplementation, start bug analysis from first principles, and reject fallback implementations that hide main-flow errors.
 - contract_coverage_required: evidence must record OSS reuse/non-reuse rationale and no-hidden-fallback status for coding/debug work.
+
+## D-${context.taskId}-009 Caller-Defined Roles
+
+- accepted: CLI Agent Runner preallocates no role roster; each \`--role\` value is defined by the caller from the actual responsibility.
+- constraint: role names must be non-empty single-line values.
+- impact: \`assign\`, \`collect\`, \`run\`, \`orchestrate\`, and brokered \`delegate\` accept responsibility-specific role names without an allowlist.
+- contract_coverage_required: evidence must show a caller-defined role outside any historical roster reaches the applicable assignment or runner packet.
 `;
 }
 
@@ -1569,26 +1562,16 @@ function renderAudit(context) {
 }
 
 function renderAssignments(context) {
-  const assignments = {
-    Intake: ["scaffolded", "Confirm project instructions, cwd, task, existing workflow state, and whether this is debug or repair work.", "Intake summary with blockers and debug classification."],
-    "Repo Mapper": ["scaffolded", "Map repository structure and likely edit boundaries.", "Repo map and source boundaries."],
-    Requirements: ["scaffolded", "Extract explicit requirements, non-goals, expected outcome, actual failure when debugging, and whether mature GitHub/npm OSS already solves the requirement.", "Requirement list with ambiguity notes, OSS reuse decision, and failure contract if applicable."],
-    Planner: ["scaffolded", "Convert requirements into an executable task sequence.", "Plan with ordered checkpoints."],
-    Architect: ["scaffolded", "Identify design constraints, integration points, and likely failure point for debug work.", "Architecture notes, risk points, and failure-path notes."],
-    Implementer: ["scaffolded", "Make scoped code or document changes when requested; reuse mature OSS when approved and suitable, and for debug work fix the root cause instead of masking failure with fallback implementation.", "Changed files, OSS reuse or non-reuse rationale, implementation notes, and root-cause fix notes when applicable."],
-    "Test Runner": ["scaffolded", "Run allowed verification commands; for debug work, verify the intended outcome now succeeds.", "Verification output, skipped checks, and outcome evidence."],
-    Reviewer: ["scaffolded", "Review diffs for regressions, missing requirements, avoidable reimplementation of mature OSS, and fallback implementations that hide main-flow errors.", "Findings ordered by severity."],
-    "Risk Guard": ["scaffolded", "Check destructive actions, external sending, secrets, and scope drift.", "Risk assessment and required stops."],
-    "Docs Keeper": ["scaffolded", `Keep ${STATE_DIR_NAME} task, todo, decisions, and audit current.`, "Updated docs summary."],
-    UX: ["scaffolded", "Assess user-facing workflow clarity.", "UX notes and friction points."],
-    Dependency: ["scaffolded", "Check whether mature GitHub/npm OSS should be reused directly, verify dependency approval and scope boundaries, and avoid unapproved installs.", "Dependency impact notes and OSS reuse recommendation."],
-    DevOps: ["scaffolded", "Check runnable commands, Git state, and release boundaries.", "Operational readiness notes."],
-    Auditor: ["scaffolded", `Compare outcomes against task_id, epoch, scope, accepted decisions, completion conditions, the ${CONTRACT_COVERAGE_GATE_NAME}, the ${CODING_CONDUCT_GATE_NAME}, and the debugging integrity gate.`, "Final audit result with D-*/C-* contract coverage evidence, OSS reuse decision, no-hidden-fallback status, and debug root-cause status when applicable."],
-  };
+  return `# Dynamic Role Assignments
 
-  return `# Role Assignment Scaffold
+Roles are created only when the parent issues a concrete assignment. CLI Agent Runner does not preallocate, recommend, or enforce a role roster.
 
-These 14 sections are stable validation and routing slots. They are not resident agents or spawned workers; actual child work begins only when a scoped assignment is issued through parent-managed subagents or runner packets.
+- role_policy: ${ROLE_POLICY}
+- role_constraint: ${ROLE_CONSTRAINT}
+- preallocated_roles: none
+- task_id: ${context.taskId}
+- epoch: ${context.epoch}
+- scope: ${context.scope}
 
 ## Debugging Integrity Gate
 
@@ -1613,23 +1596,13 @@ ${renderContractCoverageGateState(context)}
 
 ${renderSupervisionSection()}
 
-${ROLES.map((role) => {
-  const [status, assignment, expectedOutput] = assignments[role];
-  return `## ${role}
+## Assignment Packet Contract
 
-- role: ${role}
-- status: ${status}
-- task_id: ${context.taskId}
-- epoch: ${context.epoch}
-- scope: ${context.scope}
-- assignment: ${assignment}
-- expected_output: ${expectedOutput}
-${renderCodingConductFields()}
-${renderSupervisionFields()}
-${renderContractCoveragePacketSchema(context)}
-${renderMetacognitiveGatePacketSchema(context.metacognitiveGate)}
-- lifecycle: ${CHILD_RETURN_LIFECYCLE} ${SUBAGENT_LIFECYCLE}`;
-}).join("\n\n")}
+- required_fields: role, status, task_id, epoch, scope, assignment, expected_output, lifecycle
+- role_source: caller
+- role_validation: ${ROLE_CONSTRAINT}
+- assignment_record: ${STATE_DIR_NAME}/${RUNNER_FILE}
+- lifecycle: ${CHILD_RETURN_LIFECYCLE} ${SUBAGENT_LIFECYCLE}
 `;
 }
 
@@ -1753,7 +1726,7 @@ function normalizeAssignmentsDebugIntegrity(text, context = {}) {
 
 - ${DEBUG_INTEGRITY}
 - For debug or repair tasks, integration material must start from first principles and include expected outcome, actual failure, reproduction path, failure point, competing hypotheses, root cause, fix, and verification.`;
-  if (!next.includes(DEBUG_INTEGRITY)) next = insertAfterRoleScaffoldHeading(next, block);
+  if (!next.includes(DEBUG_INTEGRITY)) next = insertAfterAssignmentsHeading(next, block);
   next = normalizeAssignmentsCodingConduct(next);
   next = normalizeAssignmentsSupervision(next);
   next = normalizeAssignmentsMetacognitiveGate(next, context.workflowGate);
@@ -1859,12 +1832,7 @@ function normalizeAuditCodingConduct(text) {
 function normalizeAssignmentsCodingConduct(text) {
   let next = text;
   if (!validateCodingConductFields(getCodingConductFieldSection(next)).valid) {
-    next = insertAfterRoleScaffoldHeading(next, `## ${CODING_CONDUCT_GATE_NAME}\n\n${renderCodingConductFields()}`);
-  }
-  for (const role of ROLES) {
-    const section = getRoleSection(next, role);
-    if (!section || validateCodingConductFields(section).valid) continue;
-    next = next.replace(section, ensureCodingConductFieldsInSection(section));
+    next = insertAfterAssignmentsHeading(next, `## ${CODING_CONDUCT_GATE_NAME}\n\n${renderCodingConductFields()}`);
   }
   return next;
 }
@@ -1927,20 +1895,27 @@ function normalizeAuditSupervision(text) {
 
 function normalizeAssignmentsSupervision(text) {
   let next = text;
-  if (!next.includes(SUPERVISION_CONTRACT_NAME) || !next.includes(SUPERVISION_STALE_TIMEOUT_PATH)) {
+  if (!validateSupervisionContractFields(getSupervisionFieldSection(next)).valid) {
     const block = renderSupervisionSection();
-    if (/^## Nested CLI Agent Runner Preflight$/m.test(next)) {
+    if (new RegExp(`^## ${escapeRegExp(SUPERVISION_CONTRACT_NAME)}$`, "m").test(next)) {
+      next = replaceMarkdownHeadingSection(next, `## ${SUPERVISION_CONTRACT_NAME}`, block);
+    } else if (/^## Nested CLI Agent Runner Preflight$/m.test(next)) {
       next = insertAfterHeadingSection(next, "## Nested CLI Agent Runner Preflight", block);
     } else {
-      next = insertAfterRoleScaffoldHeading(next, block);
+      next = insertAfterAssignmentsHeading(next, block);
     }
   }
-  for (const role of ROLES) {
-    const section = getRoleSection(next, role);
-    if (!section || validateSupervisionContractFields(section).valid) continue;
-    next = next.replace(section, ensureSupervisionFieldsInSection(section));
-  }
   return next;
+}
+
+function replaceMarkdownHeadingSection(text, heading, block) {
+  const pattern = new RegExp(`^${escapeRegExp(heading)}$`, "m");
+  const match = pattern.exec(text);
+  if (!match) return text;
+  const afterHeadingStart = match.index + match[0].length;
+  const nextHeadingOffset = text.slice(afterHeadingStart).search(/^## /m);
+  const end = nextHeadingOffset === -1 ? text.length : afterHeadingStart + nextHeadingOffset;
+  return `${text.slice(0, match.index)}${block.trimEnd()}\n\n${text.slice(end).trimStart()}`;
 }
 
 function normalizeHandoffSupervision(text) {
@@ -2109,12 +2084,7 @@ function normalizeAssignmentsMetacognitiveGate(text, gate) {
     const block = `## ${METACOGNITIVE_GATE_NAME}
 
 ${renderMetacognitiveGateState(gate)}`;
-    next = insertAfterRoleScaffoldHeading(next, block);
-  }
-  for (const role of ROLES) {
-    const section = getRoleSection(next, role);
-    if (!section || validateMetacognitiveGateText(section).valid) continue;
-    next = next.replace(section, ensureMetacognitiveGateSchemaInSection(section, gate));
+    next = insertAfterAssignmentsHeading(next, block);
   }
   return next;
 }
@@ -2126,12 +2096,7 @@ function normalizeAssignmentsContractCoverageGate(text, context = {}) {
     const block = `${CONTRACT_COVERAGE_GATE_NAME}:
 
 ${renderContractCoverageGateState(context)}`;
-    next = insertAfterRoleScaffoldHeading(next, block);
-  }
-  for (const role of ROLES) {
-    const section = getRoleSection(next, role);
-    if (!section || validateContractCoverageGateText(section).valid) continue;
-    next = next.replace(section, ensureContractCoverageGateSchemaInSection(section, context));
+    next = insertAfterAssignmentsHeading(next, block);
   }
   return next;
 }
@@ -2234,11 +2199,10 @@ function insertAfterHeadingSection(text, heading, block) {
   return `${text.slice(0, insertAt).trimEnd()}\n\n${block}\n\n${text.slice(insertAt).trimStart()}`;
 }
 
-function insertAfterRoleScaffoldHeading(text, block) {
-  for (const heading of ["# Role Assignment Scaffold", "# Role Assignments"]) {
-    if (new RegExp(`^${escapeRegExp(heading)}$`, "m").test(text)) {
-      return insertAfterHeading(text, heading, block);
-    }
+function insertAfterAssignmentsHeading(text, block) {
+  const heading = "# Dynamic Role Assignments";
+  if (new RegExp(`^${escapeRegExp(heading)}$`, "m").test(text)) {
+    return insertAfterHeadingSection(text, heading, block);
   }
   return `${text.trimEnd()}\n\n${block}\n`;
 }
@@ -2826,9 +2790,9 @@ function validateAssignmentFiles(stateDir) {
   if (existsSync(assignmentPath)) {
     checkedFiles += 1;
     const text = readFileSync(assignmentPath, "utf8");
-    const roleValidation = validateRoleAssignments(text, workflowGate);
-    results.push(...roleValidation.results);
-    fatal = fatal || roleValidation.fatal;
+    const assignmentValidation = validateAssignmentsDocument(text, workflowGate);
+    results.push(...assignmentValidation.results);
+    fatal = fatal || assignmentValidation.fatal;
     const contractGate = validateContractCoverageGateText(text);
     if (contractGate.valid) results.push(["ok", "contract coverage gate present in assignments"]);
     else {
@@ -2853,59 +2817,44 @@ function validateAssignmentFiles(stateDir) {
   return { results, fatal };
 }
 
-function validateRoleAssignments(text, workflowGate = { required: false }) {
+function validateAssignmentsDocument(text, workflowGate = { required: false }) {
   const results = [];
   let fatal = false;
-  const missingRoles = ROLES.filter((role) => !new RegExp(`^## ${escapeRegExp(role)}$`, "m").test(text));
-  const invalidFields = [];
-  const invalidSupervisionFields = [];
-  const invalidCodingConductFields = [];
-  const invalidMetacognitiveFields = [];
+  const policyErrors = [];
 
-  for (const role of ROLES) {
-    const section = getRoleSection(text, role);
-    for (const field of ["role", "status", "assignment", "expected_output", "lifecycle"]) {
-      if (!getFieldValue(section, field)) {
-        invalidFields.push(`${role}.${field}`);
-      }
-    }
-    for (const field of ["task_id", "epoch", "scope"]) {
-      for (const error of validateIdentityField(section, field, role)) invalidFields.push(error);
-    }
-    const supervision = validateSupervisionContractFields(section);
-    for (const missing of supervision.missing) invalidSupervisionFields.push(`${role}.${missing}`);
-    const conduct = validateCodingConductFields(section);
-    for (const missing of conduct.missing) invalidCodingConductFields.push(`${role}.${missing}`);
-    if (workflowGate.required) {
-      const roleGate = validateMetacognitiveGateText(section);
-      for (const missing of roleGate.missing) invalidMetacognitiveFields.push(`${role}.${missing}`);
-    }
+  if (getFieldValue(text, "role_policy") !== ROLE_POLICY) policyErrors.push("role_policy");
+  if (getFieldValue(text, "role_constraint") !== ROLE_CONSTRAINT) policyErrors.push("role_constraint");
+  if (getFieldValue(text, "preallocated_roles") !== "none") policyErrors.push("preallocated_roles");
+  for (const field of ["task_id", "epoch", "scope"]) {
+    for (const error of validateIdentityField(text, field, "assignments")) policyErrors.push(error);
   }
 
-  if (missingRoles.length === 0) results.push(["ok", "14 role assignment scaffold sections present"]);
+  if (policyErrors.length === 0) results.push(["ok", "caller-defined role policy present; no role roster required"]);
   else {
-    results.push(["warn", `missing role assignments: ${missingRoles.join(", ")}`]);
+    results.push(["warn", `missing or invalid caller-defined role policy fields: ${policyErrors.join(", ")}`]);
     fatal = true;
   }
 
-  if (invalidFields.length === 0) results.push(["ok", "assignment fields are present and non-empty"]);
+  const assignmentContractFields = splitList(getAnyFieldValue(text, "required_fields"));
+  const missingAssignmentFields = ["role", "status", "task_id", "epoch", "scope", "assignment", "expected_output", "lifecycle"]
+    .filter((field) => !assignmentContractFields.includes(field));
+  if (missingAssignmentFields.length === 0) results.push(["ok", "dynamic assignment packet contract present"]);
   else {
-    results.push(["warn", `missing or empty assignment fields: ${invalidFields.join(", ")}`]);
+    results.push(["warn", `missing dynamic assignment packet fields: ${missingAssignmentFields.join(", ")}`]);
     fatal = true;
   }
 
-  if (invalidSupervisionFields.length === 0) results.push(["ok", "supervision contract present in assignments"]);
+  const supervision = validateSupervisionContractFields(getSupervisionFieldSection(text));
+  if (supervision.valid) results.push(["ok", "supervision contract present in assignments"]);
   else {
-    results.push(["warn", `missing or incomplete supervision assignment fields: ${invalidSupervisionFields.join(", ")}`]);
+    results.push(["warn", `missing or incomplete supervision assignment fields: ${supervision.missing.join(", ")}`]);
     fatal = true;
   }
 
   const assignmentConduct = validateCodingConductFields(getCodingConductFieldSection(text));
-  if (assignmentConduct.valid && invalidCodingConductFields.length === 0) {
-    results.push(["ok", "coding conduct gate present in assignments"]);
-  } else {
-    const missing = [...assignmentConduct.missing.map((field) => `assignments.${field}`), ...invalidCodingConductFields];
-    results.push(["warn", `missing or incomplete coding conduct assignment fields: ${missing.join(", ")}`]);
+  if (assignmentConduct.valid) results.push(["ok", "coding conduct gate present in assignments"]);
+  else {
+    results.push(["warn", `missing or incomplete coding conduct assignment fields: ${assignmentConduct.missing.map((field) => `assignments.${field}`).join(", ")}`]);
     fatal = true;
   }
 
@@ -2920,12 +2869,6 @@ function validateRoleAssignments(text, workflowGate = { required: false }) {
     if (assignmentGate.valid) results.push(["ok", "metacognitive gate present in assignments"]);
     else {
       results.push(["warn", `metacognitive gate missing from assignments: ${assignmentGate.missing.join(", ")}`]);
-      fatal = true;
-    }
-
-    if (invalidMetacognitiveFields.length === 0) results.push(["ok", "metacognitive assignment fields are present"]);
-    else {
-      results.push(["warn", `missing or empty metacognitive assignment fields: ${invalidMetacognitiveFields.join(", ")}`]);
       fatal = true;
     }
   }
@@ -4219,11 +4162,7 @@ function requireIdentityArg(value, flag) {
 }
 
 function requireRole(value) {
-  const role = singleLine(requireArg(value, "--role"));
-  if (!ROLES.includes(role)) {
-    throw new CliError(`unknown role: ${role}; expected one of ${ROLES.join(", ")}`, 1);
-  }
-  return role;
+  return requireIdentityArg(value, "--role");
 }
 
 function resolveFeatureProfile(value) {
@@ -4556,11 +4495,11 @@ Commands:
   live-console
            Start the built-in token-protected loopback viewer server for Codex IAB and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments
-           Block missing or empty task_id, epoch, scope, lifecycle, supervision, coding conduct, or debugging_integrity fields in assignments and modern runner packets.
+           Validate the caller-defined assignment contract and block missing task_id, epoch, scope, lifecycle, supervision, coding conduct, or debugging_integrity fields in modern runner packets.
   normalize-debugging-integrity
            Dry-run by default. With --execute, add debugging integrity and metacognitive gate schema to existing .cli-agent-runner files and supersede pre-gate completion claims that lack required result fields.
   handoff  Print target .cli-agent-runner/handoff.md.
-  doctor   Check required workflow files, role assignments, isolation keys, and Git state.
+  doctor   Check required workflow files, the caller-defined role contract, isolation keys, and Git state.
 
 State:
   The workflow state directory is <git-root>/.cli-agent-runner.
@@ -4575,6 +4514,7 @@ State:
   Fieldless current packets are invalid. unknown_legacy is accepted only for pre-contract workflow state or non-current packets that predate the recorded lifecycle contract activation time; validation does not synthesize retirement.
   --runtime-thread-closed is rejected globally for every command. The workflow CLI never emits or accepts runtime_thread_closed=true. Interruption and process exit are not runtime-thread closure evidence.
   Parent-managed child-worker prompts also suppress nested CLI Agent Runner preflight; child workers do not ask \`cli-agent-runner を使いますか？ [Y/n]\` or start independent nested CLI Agent Runner workflows inside an assigned task_id/epoch/scope. Descendant delegation is allowed only when finite hierarchy fields grant remaining_depth > 0 and inherited supervision is preserved.
+  Roles are caller-defined responsibility labels. --role accepts every non-empty single-line value; CLI Agent Runner has no built-in role roster.
   delegation_mode leaf exposes no broker. delegation_mode local_orchestrator exposes a runner-owned loopback broker, and every accepted descendant inherits task lineage, runner profile, authority scope, supervision, and decremented remaining_depth. Codex, Claude, Grok, and custom profiles use the same provider-neutral broker path.
   Supervision treats silence before heartbeat deadline as neutral, forbids cancel/interruption/workflow state_retired/replacement of quiet workers during the no-interrupt window, requires workers that are still running at heartbeat_interval to self-report completed/current/blocker/ETA progress, treats explicit completed/blocked/failed results as immediate collect/integrate triggers rather than silence, treats heartbeat as telemetry rather than completion evidence, requires explicit state_retired reasons (${SUPERVISION_RETIRE_CANCEL_REASONS.join(", ")}), and uses missed heartbeat -> soft ping/status request -> grace wait -> stale mark before cancel/replace.
   Optional --feature-profile overlays provide scoped assignment guidance only. Known ids: ${knownFeatureProfileIds().join(", ")}.
@@ -4606,15 +4546,6 @@ function toCamel(value) {
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function getRoleSection(text, role) {
-  const startMatch = new RegExp(`^## ${escapeRegExp(role)}$`, "m").exec(text);
-  if (!startMatch) return "";
-  const start = startMatch.index;
-  const next = text.slice(start + startMatch[0].length).search(/^## /m);
-  if (next === -1) return text.slice(start);
-  return text.slice(start, start + startMatch[0].length + next);
 }
 
 function getFieldValue(section, field) {
@@ -4700,6 +4631,19 @@ function getCodingConductFieldSection(text) {
   const nextHeading = findMarkdownLineOutsideFences(
     content,
     (line) => /^#{1,6}\s+/.test(line) || /^(?:Debugging integrity|Subagent lifecycle|Meta-Cognitive Debug\/Repair Gate):$/.test(line),
+    heading.end,
+  );
+  return content.slice(heading.start, nextHeading ? nextHeading.start : content.length);
+}
+
+function getSupervisionFieldSection(text) {
+  const content = String(text || "");
+  const headingPattern = new RegExp(`^(?:#{1,6}\\s+)?${escapeRegExp(SUPERVISION_CONTRACT_NAME)}:?\\s*$`);
+  const heading = findMarkdownLineOutsideFences(content, (line) => headingPattern.test(line));
+  if (!heading) return content;
+  const nextHeading = findMarkdownLineOutsideFences(
+    content,
+    (line) => /^#{1,6}\s+/.test(line),
     heading.end,
   );
   return content.slice(heading.start, nextHeading ? nextHeading.start : content.length);
