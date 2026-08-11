@@ -32,7 +32,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     .map((line) => line.trim())
     .join(" ");
 
-  assert.equal(manifest.version, "0.4.0");
+  assert.equal(manifest.version, "0.4.1");
   assert.equal(packageMetadata.version, manifest.version);
 
   assert.match(manifest.description, /Run scoped Grok, Claude, Codex, or custom CLI workers/i);
@@ -60,6 +60,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "delegation-broker",
     "delegated-run-lineage",
     "jobs-file",
+    "caller-defined-roles",
     "cli-agent-runner-continuation",
   ]);
   assert.deepEqual(manifest.interface.capabilities, [
@@ -73,11 +74,14 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     "Runner-Brokered Local Descendant Execution",
     "Live Console Parent-Child Run Lineage",
     "Parallel Independent Leaf-Job Orchestration",
+    "Caller-Defined Responsibility Roles",
     "Terminal Minimal Result For Successful Runs",
     "Machine-Checkable Scope Guard",
   ]);
   assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
   assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
+  assert.match(manifest.interface.longDescription, /Every role is a caller-defined responsibility label/i);
+  assert.match(manifest.interface.longDescription, /preallocates and enforces no role roster/i);
   assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
   assert.match(manifest.interface.longDescription, /`run --runner <id>` launches exactly one parent-managed worker/i);
   assert.match(manifest.interface.longDescription, /`orchestrate --runner <id> --jobs-file <json>` concurrently launches parent-declared independent responsibility leaves/i);
@@ -136,7 +140,7 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(skill, /On the resumed turn, restore the Live Console before continuing project work/i);
   assert.match(skill, /Never resume headless merely because a console was opened in an earlier turn/i);
   assert.match(skill, /Task identity remains top-level/i);
-  assert.match(skill, /Each job must contain `id`, `role`, `ownerScope`, `assignment`, and `expectedOutput`/i);
+  assert.match(skill, /Each job must contain `id`, caller-defined `role`, `ownerScope`, `assignment`, and `expectedOutput`/i);
   assert.match(skill, /stable handoffs and non-overlapping writable scopes materially reduce elapsed time/i);
   assert.match(skill, /use `run` when the split and merge overhead erases the saving/i);
   assert.match(skill, /hierarchy permission ceiling as a substitute for the parent's explicit sibling-job dispatch/i);
@@ -146,6 +150,9 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.match(skill, /worker-only `delegate` command/i);
   assert.match(skill, /`delegation\.started`, `delegation\.completed`, or `delegation\.failed`/i);
   assert.match(skill, /Codex and Claude the same explicit local-orchestrator route as Grok/i);
+  assert.match(skill, /Every `role` is a caller-defined responsibility label/i);
+  assert.match(skill, /must not preallocate, recommend, or enforce a built-in role roster/i);
+  assert.match(skill, /initialize the role-agnostic assignment packet contract/i);
 
   assert.equal(defaultRunners.version, 1);
   assert.deepEqual(Object.keys(defaultRunners.runners).sort(), ["claude-cli", "codex-cli", "grok-cli"]);
@@ -163,7 +170,8 @@ test("agents metadata advertises the run-or-orchestrate Live Console route", () 
   assert.match(shortDescription, /CLI workers, brokered local descendants, or parallel leaf jobs/i);
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
   assert.match(defaultPrompt, /Open IAB Live Console first/i);
+  assert.match(defaultPrompt, /name roles from actual responsibilities/i);
   assert.match(defaultPrompt, /explicit local_orchestrator delegation/i);
-  assert.match(defaultPrompt, /orchestrate leaf jobs through the shared viewer/i);
+  assert.match(defaultPrompt, /orchestrate leaf jobs/i);
   assert.match(defaultPrompt, /stop after success/i);
 });

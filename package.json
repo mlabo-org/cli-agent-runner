@@ -1,8 +1,8 @@
 {
   "name": "cli-agent-runner",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "private": true,
-  "description": "Scoped CLI worker runner with a built-in IAB Live Console.",
+  "description": "Scoped CLI worker runner with caller-defined roles and a built-in IAB Live Console.",
   "type": "module",
   "license": "MIT",
   "author": "Makoto Suzuki",

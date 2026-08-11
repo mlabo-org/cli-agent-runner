@@ -81,7 +81,7 @@ test("CLI streams a Grok-shaped messages fixture into the built-in Live Console 
     const execution = runCli([
       "run",
       "--target-cwd", repo,
-      "--role", "Implementer",
+      "--role", "Grok Stream Observer",
       "--task-id", "live-fixture",
       "--epoch", "e1",
       "--scope", "scope:v1 all",
@@ -108,7 +108,9 @@ test("CLI streams a Grok-shaped messages fixture into the built-in Live Console 
     assert.equal(run.events.at(-1).type, "run.completed");
     assert.deepEqual(run.events.map((event) => event.sequence), run.events.map((_, index) => index + 1));
     assert.ok(run.events.some((event) => event.text === "visible "));
-    assert.match(readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8"), /summary: visible progress/);
+    const runnerState = readFileSync(path.join(repo, ".cli-agent-runner", "runner.md"), "utf8");
+    assert.match(runnerState, /^- role: Grok Stream Observer$/m);
+    assert.match(runnerState, /summary: visible progress/);
     assert.match(completed.stdout, /live_console_status: connected/);
   } finally {
     await liveConsole.close();
@@ -141,14 +143,14 @@ test("orchestrate gives parallel jobs distinct Live Console run IDs and event st
       jobs: [
         {
           id: "alpha-live",
-          role: "Implementer",
+          role: "Public Stream Producer",
           ownerScope: "alpha/",
           assignment: "Emit alpha activity",
           expectedOutput: "Alpha Live Console result",
         },
         {
           id: "beta-live",
-          role: "Test Runner",
+          role: "Timeline Contract Observer",
           ownerScope: "beta/",
           assignment: "Emit beta activity",
           expectedOutput: "Beta Live Console result",
@@ -216,7 +218,7 @@ test("local_orchestrator delegates through the runner broker and exposes child l
     const completed = await runCli([
       "run",
       "--target-cwd", repo,
-      "--role", "Implementer",
+      "--role", "Delegation Flow Integrator",
       "--task-id", "live-fixture",
       "--epoch", "e1",
       "--scope", "scope:v1 all",
@@ -263,7 +265,7 @@ test("delegate fails closed outside a runner-owned local orchestrator", async ()
   const result = await runCli([
     "delegate",
     "--delegate-id", "unowned-child",
-    "--role", "Test Runner",
+    "--role", "Bounded Child Evidence Producer",
     "--focus-scope", "scope:v1 all",
     "--assignment", "Must not launch",
     "--expected-output", "No result",
@@ -441,7 +443,7 @@ function delegationFixtureProgram() {
     CLI,
     "delegate",
     "--delegate-id", "local-child",
-    "--role", "Test Runner",
+    "--role", "Bounded Child Evidence Producer",
     "--focus-scope", "scope:v1 paths=README.md",
     "--assignment", "Produce one bounded delegated result",
     "--expected-output", "Delegated fixture result",

@@ -35,7 +35,8 @@ CLI Agent Runner gives a parent Codex task one provider-neutral process boundary
 
 - `codex-cli`, `claude-cli`, and `grok-cli` are bundled profiles.
 - JSON configuration can add or override profiles without provider-specific execution code.
-- Every worker receives a target repository, role, task identity, machine-checkable write scope, assignment, and expected output.
+- Every worker receives a target repository, caller-defined responsibility role, task identity, machine-checkable write scope, assignment, and expected output.
+- `--role` accepts any non-empty single-line label. CLI Agent Runner has no built-in or preallocated role roster.
 - stdout, stderr, structured provider events, normalized results, and brokered child lineage can be observed in the loopback-only Live Console.
 - Repository scope is checked after execution. Out-of-scope changes remain an explicit failure.
 
@@ -119,7 +120,7 @@ From the repository root:
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
-  --role Implementer \
+  --role "Rust Protocol Repair Owner" \
   --task-id focused-change \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \
@@ -135,7 +136,7 @@ Direct `run` and `orchestrate` commands start a token-protected loopback Live Co
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
-  --role Implementer \
+  --role "Release Integration Owner" \
   --task-id local-team \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \
@@ -157,14 +158,14 @@ Create a version-1 jobs file:
   "jobs": [
     {
       "id": "docs",
-      "role": "Docs Keeper",
+      "role": "Public Documentation Owner",
       "ownerScope": "README.md",
       "assignment": "Update the public contract.",
       "expectedOutput": "Updated README."
     },
     {
       "id": "tests",
-      "role": "Test Runner",
+      "role": "Workflow Contract Verifier",
       "ownerScope": "tests/",
       "assignment": "Add the scoped behavior tests.",
       "expectedOutput": "Changed tests and results."
@@ -222,7 +223,8 @@ CLI Agent Runnerは、親Codex taskからCLI workerを起動するためのprovi
 
 - `codex-cli`、`claude-cli`、`grok-cli`を標準profileとして同梱します。
 - JSON設定により、provider固有の実行分岐を追加せずprofileを追加・上書きできます。
-- 各workerへ対象repository、role、task identity、機械判定可能なwrite scope、assignment、expected outputを渡します。
+- 各workerへ対象repository、呼び出し側が定義した責務role、task identity、機械判定可能なwrite scope、assignment、expected outputを渡します。
+- `--role`は空でない一行の任意名を受理します。組み込み・事前確保済みのrole名簿はありません。
 - stdout、stderr、providerのstructured event、正規化結果、broker経由のchild lineageをloopback専用Live Consoleで観測できます。
 - 実行後にrepository scopeを検査し、範囲外変更は明示的な失敗として残します。
 
@@ -287,7 +289,7 @@ repository rootから実行します。
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
-  --role Implementer \
+  --role "Rust Protocol Repair Owner" \
   --task-id focused-change \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \
@@ -303,7 +305,7 @@ node bin/cli-agent-runner.mjs run \
 ```sh
 node bin/cli-agent-runner.mjs run \
   --target-cwd /path/to/jobsite \
-  --role Implementer \
+  --role "Release Integration Owner" \
   --task-id local-team \
   --epoch e1 \
   --scope "scope:v1 paths=src/,tests/" \
@@ -325,14 +327,14 @@ version 1のjobs fileを作成します。
   "jobs": [
     {
       "id": "docs",
-      "role": "Docs Keeper",
+      "role": "Public Documentation Owner",
       "ownerScope": "README.md",
       "assignment": "Update the public contract.",
       "expectedOutput": "Updated README."
     },
     {
       "id": "tests",
-      "role": "Test Runner",
+      "role": "Workflow Contract Verifier",
       "ownerScope": "tests/",
       "assignment": "Add the scoped behavior tests.",
       "expectedOutput": "Changed tests and results."
