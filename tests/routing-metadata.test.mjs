@@ -32,6 +32,7 @@ test("discovery metadata routes built-in and configured CLI worker execution", (
     .join(" ");
 
   assert.match(manifest.description, /Launch scoped Codex, Claude, Grok, or user-configured CLI workers/i);
+  assert.match(manifest.description, /separate execution, parent artifact-acceptance, and result-contract outcomes/i);
   assert.match(manifest.description, /Primary route: explicit run\/orchestrate --runner <id>/i);
   assert.match(
     manifest.description,
@@ -54,13 +55,14 @@ test("discovery metadata routes built-in and configured CLI worker execution", (
     "Codex, Claude, And Grok CLI Worker Launch",
     "User-Configured CLI Runner Registry",
     "stdout/stderr And Final-Message Capture",
-    "Normalized Process Runner Results",
+    "Separated Execution, Artifact-Acceptance, And Result-Contract Outcomes",
     "Machine-Checkable Scope Guard",
   ]);
   assert.match(manifest.interface.shortDescription, /Codex, Claude, Grok, or configured CLI workers/i);
   assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
   assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
   assert.match(manifest.interface.longDescription, /captures the configured result source plus stdout\/stderr/i);
+  assert.match(manifest.interface.longDescription, /records execution, parent artifact-acceptance, and result-contract outcomes independently/i);
   assert.ok(
     manifest.interface.defaultPrompt.every((prompt) =>
       /CLI Agent Runner|\.cli-agent-runner|process-runner-result/.test(prompt),
@@ -70,9 +72,9 @@ test("discovery metadata routes built-in and configured CLI worker execution", (
 
   assert.ok(frontmatterDescription.length <= 320, "skill description must stay routing-budget concise");
   assert.match(frontmatterDescription.slice(0, 160), /^Launch scoped Codex, Claude, Grok, or configured CLI workers/i);
-  assert.match(frontmatterDescription.slice(0, 220), /process-runner-result state in \.cli-agent-runner/i);
-  assert.match(frontmatterDescription, /Trigger on CLI Agent Runner, cli-agent-runner, Claude\/Grok CLI workers/i);
-  assert.match(frontmatterDescription, /Excludes ordinary official-subagent work/i);
+  assert.match(frontmatterDescription.slice(0, 220), /separate execution, artifact-acceptance, and result-contract outcomes/i);
+  assert.match(frontmatterDescription, /Triggers: cli-agent-runner, Grok\/Claude CLI, custom runner JSON/i);
+  assert.match(frontmatterDescription, /excludes ordinary official subagents/i);
 
   const triggerBoundary = skill.match(/## Trigger Boundary\n\n([\s\S]*?)\n## Core Contract/);
   assert.ok(triggerBoundary, "SKILL.md must define Trigger Boundary before Core Contract");
@@ -94,5 +96,5 @@ test("agents metadata advertises the multi-CLI process-runner route", () => {
   assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
   assert.match(defaultPrompt, /Use CLI Agent Runner to launch a scoped built-in or JSON-configured CLI worker/i);
   assert.match(defaultPrompt, /capture its result/i);
-  assert.match(defaultPrompt, /record process-runner-result state/i);
+  assert.match(defaultPrompt, /record separate execution, parent artifact-acceptance, and result-contract state in process-runner-result/i);
 });

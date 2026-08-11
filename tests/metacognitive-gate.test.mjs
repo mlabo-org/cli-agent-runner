@@ -897,7 +897,7 @@ test("assign and run skeletons carry the metacognitive gate for gate-required wo
   }
 });
 
-test("run runner results reject completed metacognitive packets with low-information evidence", () => {
+test("run separates nonconformant result reports from completed process and parent artifact acceptance", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
   try {
@@ -937,13 +937,21 @@ process.stdout.write("fake codex completed\\n");
       },
     });
 
-    assert.notEqual(run.status, 0);
-    assert.match(run.stderr, /completed runner result missing metacognitive gate fields/);
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /ok status: completed/);
+    assert.match(run.stdout, /ok artifact_status: parent_acceptance_pending/);
+    assert.match(run.stdout, /warn result_contract_status: nonconformant/);
     const runner = readState(repo, "runner.md");
     assert.match(runner, /type: process-runner-result/);
-    assert.match(runner, /status: failed/);
-    assert.match(runner, /failure: completed runner result missing metacognitive gate fields: .*expected_outcome/);
+    assert.match(runner, /status: completed/);
+    assert.match(runner, /artifact_status: parent_acceptance_pending/);
+    assert.match(runner, /result_contract_status: nonconformant/);
+    assert.match(runner, /result_contract_failure: runner result contract missing metacognitive gate fields: .*expected_outcome/);
+    assert.match(runner, /failure: none/);
     assert.match(runner, /expected_outcome: done/);
+    const pendingParentAcceptance = runCli(["verify-assignments", "--target-cwd", repo]);
+    assert.notEqual(pendingParentAcceptance.status, 0);
+    assert.match(pendingParentAcceptance.stdout, /uncollected completed runner result missing follow-up worker result collection/);
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(fakeBin, { recursive: true, force: true });

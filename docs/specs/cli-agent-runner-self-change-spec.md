@@ -224,6 +224,16 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - Runner commands are spawned directly without a shell, always use the
      jobsite as process cwd, inherit the current environment, and share the
      existing scope guard and normalized `process-runner-result` path.
+   - A process runner result records separate outcomes. `status` and `failure`
+     belong only to execution and scope enforcement; `artifact_status` leaves
+     artifact acceptance with the parent; `result_contract_status` and
+     `result_contract_failure` own worker-report conformance.
+   - An exit-zero in-scope process with a nonconformant report remains
+     `status: completed`, records `artifact_status: parent_acceptance_pending`,
+     and records the report defect as `result_contract_status: nonconformant`.
+     Verification still requires a parent follow-up collection, so separating
+     the statuses does not silently accept the artifacts or the malformed
+     report.
    - Missing explicitly selected config, invalid JSON or profiles, unknown
      runner IDs, invalid timeout, and non-machine-checkable runner scope must
      fail before assignment state is appended or the child process launches.
