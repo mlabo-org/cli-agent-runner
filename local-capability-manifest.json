@@ -1,0 +1,50 @@
+{
+  "manifestVersion": "local-capability-manifest/v1",
+  "publisher": "suzuki-makoto",
+  "packageKind": "plugin",
+  "packageId": "cli-agent-runner",
+  "descriptorVersion": "0.4.1",
+  "capabilities": [
+    {
+      "leafId": "cli-agent-runner",
+      "title": "CLI Agent Runner Coordinator",
+      "description": "Coordinate one scoped CLI worker, a runner-brokered local descendant tree, parent-declared parallel leaf jobs, the default-on Codex IAB Live Console, or an explicitly selected CLI Agent Runner workflow-state operation.",
+      "executionClass": "host_coordinator",
+      "runtimeBinding": {
+        "kind": "host_coordinator",
+        "instruction": "In the Codex host, apply the public cli-agent-runner skill contract from skills/cli-agent-runner/SKILL.md to the validated request. The host owns target resolution, authority checks, responsibility decomposition, terminal/process execution, IAB opening, pause and resume continuity, result import, and final synthesis. Resolve the package root from the selected skill, invoke bin/cli-agent-runner.mjs with the exact requested public operation, preserve its registered runner names and direct callers, and return one complete output matching the declared schema. Start and open the token-protected loopback Live Console before target intake unless the request explicitly selects disabled console mode. Never treat the private Live Console or delegation broker HTTP endpoints as MCP tools, never claim this broker executed the skill or another server, never place a tokenized URL or provider credential in the imported result, and stop when required local process, target-scope, IAB, or selected-runner authority is unavailable."
+      },
+      "authorityRequests": [
+        {
+          "authority": "local_process_execution",
+          "reason": "Launch the selected Codex, Claude, Grok, or custom CLI profile through the package-owned validated command-and-arguments runner path."
+        },
+        {
+          "authority": "target_repository_scope",
+          "reason": "Read or modify only the caller-declared target repository and machine-checkable scope required by the selected operation."
+        },
+        {
+          "authority": "codex_iab_loopback",
+          "reason": "Start and open the package-owned token-protected loopback Live Console unless the caller explicitly selects disabled console mode."
+        },
+        {
+          "authority": "selected_runner_authentication",
+          "reason": "Use the selected provider CLI's existing local authentication without passing credentials through the broker request or result."
+        }
+      ],
+      "artifactRoots": [],
+      "inputSchema": {
+        "schemaVersion": "local-capability-schema/v1",
+        "schemaId": "cli-agent-runner/coordinator-input/v1",
+        "path": "schemas/v1/coordinator-input.schema.json"
+      },
+      "outputSchema": {
+        "schemaVersion": "local-capability-schema/v1",
+        "schemaId": "cli-agent-runner/coordinator-output/v1",
+        "path": "schemas/v1/coordinator-output.schema.json"
+      },
+      "inputPorts": [],
+      "outputPorts": []
+    }
+  ]
+}

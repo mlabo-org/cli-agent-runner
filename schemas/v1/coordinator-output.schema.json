@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cli-agent-runner/coordinator-output/v1",
+  "title": "CLI Agent Runner coordinator result",
+  "description": "The complete host-imported result for one public CLI Agent Runner coordinator operation. Sensitive tokenized URLs and provider credentials are excluded.",
+  "type": "object",
+  "required": ["operation", "status", "summary", "execution"],
+  "properties": {
+    "operation": {
+      "enum": [
+        "run",
+        "orchestrate",
+        "live-console",
+        "intake",
+        "assign",
+        "collect",
+        "finalize",
+        "handoff",
+        "verify-assignments",
+        "doctor",
+        "normalize-debugging-integrity",
+        "describe"
+      ]
+    },
+    "status": { "enum": ["completed", "failed", "stopped", "awaiting-user"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "targetCwd": { "type": "string", "pattern": "^/" },
+    "execution": {
+      "oneOf": [
+        { "$ref": "#/$defs/processResult" },
+        { "$ref": "#/$defs/orchestrationResult" },
+        { "$ref": "#/$defs/workflowStateResult" },
+        { "$ref": "#/$defs/liveConsoleResult" },
+        { "$ref": "#/$defs/capabilityDescription" }
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "stop": {
+      "type": "object",
+      "required": ["reason", "message"],
+      "properties": {
+        "reason": { "enum": ["authority_required", "user_input_required", "target_unavailable", "superseded", "cancelled"] },
+        "message": { "type": "string", "minLength": 1 },
+        "resumeCondition": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+      "then": { "required": ["failure"] }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["stopped", "awaiting-user"] } },
+        "required": ["status"]
+      },
+      "then": { "required": ["stop"] }
+    }
+  ],
+  "$defs": {
+    "liveConsoleState": {
+      "type": "object",
+      "required": ["mode", "status", "viewerOpened", "runIds"],
+      "properties": {
+        "mode": { "enum": ["default", "disabled"] },
+        "status": { "enum": ["connected", "disabled", "failed", "stopped"] },
+        "viewerOpened": { "type": "boolean" },
+        "runIds": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "processResult": {
+      "type": "object",
+      "required": ["kind", "runner", "spawned", "exitCode", "scope", "resultText", "liveConsole"],
+      "properties": {
+        "kind": { "const": "process-runner-result" },
+        "runner": { "type": "string", "minLength": 1 },
+        "spawned": { "type": "boolean" },
+        "exitCode": { "type": ["integer", "null"] },
+        "signal": { "type": ["string", "null"] },
+        "scope": { "type": "string", "minLength": 1 },
+        "resultText": { "type": "string" },
+        "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "liveConsole": { "$ref": "#/$defs/liveConsoleState" }
+      },
+      "additionalProperties": false
+    },
+    "jobResult": {
+      "type": "object",
+      "required": ["jobId", "role", "ownerScope", "status", "exitCode", "resultText", "liveConsoleRunId"],
+      "properties": {
+        "jobId": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "ownerScope": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["completed", "failed"] },
+        "exitCode": { "type": ["integer", "null"] },
+        "resultText": { "type": "string" },
+        "liveConsoleRunId": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "orchestrationResult": {
+      "type": "object",
+      "required": ["kind", "runner", "scope", "jobs", "liveConsole"],
+      "properties": {
+        "kind": { "const": "orchestration-result" },
+        "runner": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "jobs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/jobResult" } },
+        "liveConsole": { "$ref": "#/$defs/liveConsoleState" }
+      },
+      "additionalProperties": false
+    },
+    "workflowStateResult": {
+      "type": "object",
+      "required": ["kind", "action", "stateDirectory", "changedPaths", "messages"],
+      "properties": {
+        "kind": { "const": "workflow-state-result" },
+        "action": {
+          "enum": ["intake", "assign", "collect", "finalize", "handoff", "verify-assignments", "doctor", "normalize-debugging-integrity"]
+        },
+        "stateDirectory": { "type": "string", "minLength": 1 },
+        "changedPaths": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "messages": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    },
+    "liveConsoleResult": {
+      "type": "object",
+      "required": ["kind", "host", "port", "viewerOpened", "status"],
+      "properties": {
+        "kind": { "const": "live-console-result" },
+        "host": { "const": "127.0.0.1" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "viewerOpened": { "type": "boolean" },
+        "status": { "enum": ["running", "stopped", "failed"] }
+      },
+      "additionalProperties": false
+    },
+    "capabilityDescription": {
+      "type": "object",
+      "required": ["kind", "triggerBoundary", "bundledRunners", "defaultLiveConsole", "notes"],
+      "properties": {
+        "kind": { "const": "capability-description" },
+        "triggerBoundary": { "type": "string", "minLength": 1 },
+        "bundledRunners": {
+          "type": "array",
+          "items": { "enum": ["codex-cli", "claude-cli", "grok-cli"] },
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true
+        },
+        "defaultLiveConsole": { "const": "enabled" },
+        "notes": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
