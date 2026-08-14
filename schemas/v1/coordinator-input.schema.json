@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cli-agent-runner/coordinator-input/v1",
+  "title": "CLI Agent Runner coordinator request",
+  "description": "A complete host request for one public CLI Agent Runner coordinator operation. Tokenized Live Console URLs and provider credentials are intentionally absent.",
+  "type": "object",
+  "required": ["operation"],
+  "properties": {
+    "operation": {
+      "enum": [
+        "run",
+        "orchestrate",
+        "live-console",
+        "intake",
+        "assign",
+        "collect",
+        "finalize",
+        "handoff",
+        "verify-assignments",
+        "doctor",
+        "normalize-debugging-integrity",
+        "describe"
+      ]
+    },
+    "targetCwd": {
+      "type": "string",
+      "pattern": "^/",
+      "description": "Absolute caller-authorized jobsite path."
+    },
+    "task": { "type": "string", "minLength": 1 },
+    "taskId": { "type": "string", "minLength": 1 },
+    "epoch": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Machine-checkable scope for run/orchestrate, or the explicit workflow-state scope for manual operations."
+    },
+    "workType": { "enum": ["auto", "documentation", "source-change", "debug"] },
+    "role": { "type": "string", "minLength": 1, "pattern": "^[^\\r\\n]+$" },
+    "assignment": { "type": "string", "minLength": 1 },
+    "expectedOutput": { "type": "string", "minLength": 1 },
+    "runner": { "type": "string", "pattern": "^[a-z0-9._-]+$" },
+    "runnerConfigPath": { "type": "string", "minLength": 1 },
+    "delegationMode": { "enum": ["leaf", "local_orchestrator"] },
+    "featureProfile": { "type": "string", "minLength": 1 },
+    "timeoutMs": { "type": "integer", "minimum": 1 },
+    "liveConsoleMode": {
+      "enum": ["default", "disabled"],
+      "description": "Default starts and opens the package-owned loopback console; disabled is the explicit OFF route."
+    },
+    "port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "role", "ownerScope", "assignment", "expectedOutput"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "role": { "type": "string", "minLength": 1, "pattern": "^[^\\r\\n]+$" },
+          "ownerScope": { "type": "string", "minLength": 1 },
+          "assignment": { "type": "string", "minLength": 1 },
+          "expectedOutput": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "status": { "type": "string", "minLength": 1 },
+    "findings": { "type": "string", "minLength": 1 },
+    "changedFiles": { "type": "string" },
+    "verification": { "type": "string", "minLength": 1 },
+    "blockers": { "type": "string", "minLength": 1 },
+    "unresolvedAssumptions": { "type": "string", "minLength": 1 },
+    "finalizationReferences": { "type": "string", "minLength": 1 },
+    "lifecycleDisposition": { "enum": ["state_retired", "continuation_expected"] },
+    "cancelReason": {
+      "enum": [
+        "completed_retire",
+        "user_stop",
+        "safety_stop",
+        "scope_violation",
+        "stale_timeout",
+        "blocker_or_failure",
+        "stale_premise"
+      ]
+    },
+    "contractCoverage": { "const": "required" },
+    "decisionCoverage": { "type": "string", "minLength": 1 },
+    "completionCoverage": { "type": "string", "minLength": 1 },
+    "sourceSpecCoverage": { "type": "string", "minLength": 1 },
+    "execute": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "operation": { "const": "run" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId", "epoch", "scope", "role", "assignment", "expectedOutput", "runner"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "orchestrate" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId", "epoch", "scope", "runner", "jobs"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "intake" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "task", "taskId", "epoch", "scope", "workType"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "assign" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId", "epoch", "scope", "role", "assignment", "expectedOutput"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "collect" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId", "epoch", "scope", "role", "status", "findings", "changedFiles", "verification", "blockers", "unresolvedAssumptions", "lifecycleDisposition"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": { "const": "collect" },
+          "lifecycleDisposition": { "const": "state_retired" }
+        },
+        "required": ["operation", "lifecycleDisposition"]
+      },
+      "then": { "required": ["cancelReason"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "finalize" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId", "epoch", "scope", "contractCoverage", "decisionCoverage", "completionCoverage", "sourceSpecCoverage"] }
+    },
+    {
+      "if": { "properties": { "operation": { "const": "handoff" } }, "required": ["operation"] },
+      "then": { "required": ["targetCwd", "taskId"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "enum": ["verify-assignments", "doctor", "normalize-debugging-integrity"]
+          }
+        },
+        "required": ["operation"]
+      },
+      "then": { "required": ["targetCwd"] }
+    }
+  ],
+  "additionalProperties": false
+}
