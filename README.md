@@ -97,11 +97,19 @@ Installing the plugin does not install or authenticate provider CLIs.
 
 ### Manual installation
 
-The agent-first route above is preferred. For a manual install, use the canonical personal-plugin path. If the destination already exists, inspect it first and do not overwrite unrelated work.
+The agent-first route above is preferred. For a manual install, use the canonical personal-plugin path. The commands below clone only when the destination does not exist. An existing destination must be the canonical repository with a matching `origin` and no unresolved changes; otherwise stop without overwriting it.
 
 ```sh
-git clone https://github.com/mlabo-org/cli-agent-runner.git "$HOME/plugins/cli-agent-runner"
-cd "$HOME/plugins/cli-agent-runner"
+REPO=https://github.com/mlabo-org/cli-agent-runner.git
+DEST="$HOME/plugins/cli-agent-runner"
+if [ -e "$DEST" ]; then
+  test -d "$DEST/.git"
+  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
+  test -z "$(git -C "$DEST" status --porcelain)"
+else
+  git clone "$REPO" "$DEST"
+fi
+cd "$DEST"
 npm run check
 npm run plugin:install:check
 npm run plugin:install
@@ -266,11 +274,19 @@ pluginの導入はprovider CLIのインストールや認証を行いません�
 
 ### 手動インストール
 
-通常は冒頭のagent-first導入を使ってください。手動の場合もpersonal pluginのcanonical pathへ置きます。既にdestinationがある場合は先に内容を確認し、無関係な変更を上書きしないでください。
+通常は冒頭のagent-first導入を使ってください。手動の場合もpersonal pluginのcanonical pathへ置きます。下記のコマンドはdestinationが存在しない場合だけcloneします。既存destinationはcanonical repositoryで、`origin`が一致し、未解決の変更がない場合だけ継続し、それ以外は上書きせず停止します。
 
 ```sh
-git clone https://github.com/mlabo-org/cli-agent-runner.git "$HOME/plugins/cli-agent-runner"
-cd "$HOME/plugins/cli-agent-runner"
+REPO=https://github.com/mlabo-org/cli-agent-runner.git
+DEST="$HOME/plugins/cli-agent-runner"
+if [ -e "$DEST" ]; then
+  test -d "$DEST/.git"
+  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
+  test -z "$(git -C "$DEST" status --porcelain)"
+else
+  git clone "$REPO" "$DEST"
+fi
+cd "$DEST"
 npm run check
 npm run plugin:install:check
 npm run plugin:install

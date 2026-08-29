@@ -18,7 +18,6 @@ function yamlScalar(document, key) {
 
 test("discovery metadata routes built-in and configured CLI workers plus Live Console", () => {
   const manifest = JSON.parse(read(".codex-plugin/plugin.json"));
-  const packageMetadata = JSON.parse(read("package.json"));
   const defaultRunners = JSON.parse(read("config/runners.default.json"));
   const skill = read("skills/cli-agent-runner/SKILL.md");
   const frontmatter = skill.match(/^---\n([\s\S]*?)\n---\n/);
@@ -32,8 +31,10 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     .map((line) => line.trim())
     .join(" ");
 
-  assert.equal(manifest.version, "0.4.1");
-  assert.equal(packageMetadata.version, manifest.version);
+  // The plugin manifest version is the fixed Codex compatibility/cache key.
+  // Product and capability release versions have separate ownership and must
+  // not be required to match this value.
+  assert.equal(manifest.version, "0.1.0");
 
   assert.match(manifest.description, /Run scoped Grok, Claude, Codex, or custom CLI workers/i);
   assert.match(manifest.description, /Codex IAB Live Console/i);

@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildTimelineView, isErrorEvent, isLowInformationEvent } from "../viewer/timeline-model.js";
+import {
+  buildTimelineView,
+  isErrorEvent,
+  isLowInformationEvent,
+  resolveLoopbackBase,
+  resolveLoopbackEndpoint,
+} from "../viewer/timeline-model.js";
+
+test("viewer endpoint resolution never permits an external token destination", () => {
+  const location = "http://127.0.0.1:8123/?token=secret";
+  const base = resolveLoopbackBase("https://example.com/api", location);
+  assert.equal(base.origin, "http://127.0.0.1:8123");
+  assert.throws(
+    () => resolveLoopbackEndpoint("https://example.com/api/events", base.href, "/api/events"),
+    /loopback viewer origin/,
+  );
+  assert.equal(resolveLoopbackEndpoint("/api/events", base.href, "/api/snapshot").origin, base.origin);
+});
 
 test("timeline groups consecutive low-information runner messages without losing event objects", () => {
   const events = [
