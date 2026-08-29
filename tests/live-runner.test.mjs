@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -10,6 +10,11 @@ import { resolveLiveConsoleIngestUrl } from "../lib/live-console-client.mjs";
 import { startLiveConsole } from "../lib/live-console.mjs";
 import { runStreamingProcess } from "../lib/process-runner.mjs";
 import { createRunnerStreamAdapter } from "../lib/runner-stream.mjs";
+import {
+  cleanupOrchestrationWorkspace,
+  createOrchestrationWorkspace,
+  integrateOrchestrationChanges,
+} from "../lib/orchestration-workspace.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO_ROOT, "bin", "cli-agent-runner.mjs");
@@ -193,6 +198,118 @@ test("orchestrate gives parallel jobs distinct Live Console run IDs and event st
     await liveConsole.close();
     rmSync(repo, { recursive: true, force: true });
     rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
+test("orchestrate rejects a worker write outside its ownerScope", async () => {
+  const repo = makeTempGitRepo();
+  const controlDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-live-scope-"));
+  const configPath = path.join(controlDir, "runners.json");
+  const jobsPath = path.join(controlDir, "jobs.json");
+  try {
+    intake(repo);
+    writeFileSync(configPath, JSON.stringify({
+      version: 1,
+      runners: {
+        "cross-job-write-fixture": {
+          command: process.execPath,
+          args: ["-e", crossJobWriteFixtureProgram(), "{prompt}"],
+          prompt: "argument",
+          result: "stdout",
+          stream: "text",
+        },
+      },
+    }, null, 2));
+    writeFileSync(jobsPath, JSON.stringify({
+      version: 1,
+      jobs: [
+        {
+          id: "alpha-cross-write",
+          role: "Alpha Scope Worker",
+          ownerScope: "alpha/",
+          assignment: "Write only inside alpha",
+          expectedOutput: "Scope guard rejects cross-job write",
+        },
+        {
+          id: "beta-cross-write",
+          role: "Beta Scope Worker",
+          ownerScope: "beta/",
+          assignment: "Remain isolated from alpha",
+          expectedOutput: "No cross-job write",
+        },
+      ],
+    }, null, 2));
+
+    const completed = await runCli([
+      "orchestrate",
+      "--target-cwd", repo,
+      "--task-id", "live-fixture",
+      "--epoch", "e1",
+      "--scope", "scope:v1 all",
+      "--work-type", "documentation",
+      "--runner", "cross-job-write-fixture",
+      "--runner-config", configPath,
+      "--jobs-file", jobsPath,
+      "--no-live-console",
+    ]);
+
+    assert.notEqual(completed.status, 0);
+    assert.match(completed.stderr, /orchestrated job alpha-cross-write failed/);
+    assert.match(completed.stderr, /outside scope alpha\//);
+    assert.match(completed.stderr, /beta\/cross-job\.txt/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(controlDir, { recursive: true, force: true });
+  }
+});
+
+test("orchestration workspace integrates validated changes and cleans up after failed bundles", () => {
+  const repo = makeTempGitRepo();
+  writeFileSync(path.join(repo, "baseline.txt"), "before\n", "utf8");
+  const workspace = createOrchestrationWorkspace(repo);
+  try {
+    writeFileSync(path.join(workspace.root, "alpha.txt"), "alpha\n", "utf8");
+    const changes = new Map([["alpha.txt", { type: "file", value: Buffer.from("alpha\n"), mode: 0o644 }]]);
+    integrateOrchestrationChanges(repo, workspace.baseline, [changes]);
+    assert.equal(readFileSync(path.join(repo, "alpha.txt"), "utf8"), "alpha\n");
+
+    const failedWorkspace = createOrchestrationWorkspace(repo);
+    try {
+      writeFileSync(path.join(failedWorkspace.root, "beta.txt"), "must-not-apply\n", "utf8");
+      assert.throws(
+        () => integrateOrchestrationChanges(repo, failedWorkspace.baseline, [new Map([["beta.txt", { type: "file", value: Buffer.from("must-not-apply\n"), mode: 0o644 }]]), new Map([["beta.txt", { type: "file", value: Buffer.from("conflict\n"), mode: 0o644 }]])]),
+        /orchestration bundle conflict/,
+      );
+      assert.equal(existsSync(path.join(repo, "beta.txt")), false);
+    } finally {
+      const root = failedWorkspace.root;
+      cleanupOrchestrationWorkspace(failedWorkspace);
+      assert.equal(existsSync(root), false);
+    }
+  } finally {
+    cleanupOrchestrationWorkspace(workspace);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("orchestration integration fails closed when target changes during worker execution", () => {
+  const repo = makeTempGitRepo();
+  writeFileSync(path.join(repo, "shared.txt"), "before\n", "utf8");
+  const workspace = createOrchestrationWorkspace(repo);
+  try {
+    writeFileSync(path.join(workspace.root, "alpha.txt"), "alpha\n", "utf8");
+    writeFileSync(path.join(repo, "shared.txt"), "external\n", "utf8");
+    assert.throws(
+      () => integrateOrchestrationChanges(repo, workspace.baseline, [new Map([["alpha.txt", { type: "file", value: Buffer.from("alpha\n"), mode: 0o644 }]])]),
+      /target changed while orchestrating: shared\.txt/,
+    );
+    assert.equal(existsSync(path.join(repo, "alpha.txt")), false);
+    assert.equal(readFileSync(path.join(repo, "shared.txt"), "utf8"), "external\n");
+  } finally {
+    const root = workspace.root;
+    cleanupOrchestrationWorkspace(workspace);
+    assert.equal(existsSync(root), false);
+    rmSync(repo, { recursive: true, force: true });
   }
 });
 
@@ -435,6 +552,16 @@ function fixtureProgram() {
     'setTimeout(() => console.log(JSON.stringify({type:"content_block_delta",delta:{type:"text_delta",text:"visible "}})), 40)',
     'setTimeout(() => console.log(JSON.stringify({type:"content_block_delta",delta:{type:"text_delta",text:"progress"}})), 140)',
     'setTimeout(() => console.log(JSON.stringify({type:"message_stop"})), 280)',
+  ].join(";");
+}
+
+function crossJobWriteFixtureProgram() {
+  return [
+    'const fs = require("node:fs")',
+    'const path = require("node:path")',
+    'const prompt = process.argv[1] || ""',
+    'if (prompt.includes("job_id: alpha-cross-write")) { fs.mkdirSync(path.join(process.cwd(), "beta"), { recursive: true }); fs.writeFileSync(path.join(process.cwd(), "beta", "cross-job.txt"), "cross-job") }',
+    'console.log("findings: fixture completed\\nchanged_files: beta/cross-job.txt\\nverification: fixture completed\\nblockers: none\\nunresolved_assumptions: none\\nfinalization_references: artifact:cross-job\\nnext: stop")',
   ].join(";");
 }
 

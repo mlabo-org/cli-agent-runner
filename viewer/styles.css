@@ -53,7 +53,7 @@ h2 { font-size: .92rem; font-weight: 700; letter-spacing: -.01em; }
 .run-status { flex: none; width: .52rem; height: .52rem; border-radius: 50%; background: #778c91; }
 .run-status[data-status="running"] { background: var(--success); box-shadow: 0 0 0 .16rem rgba(91, 209, 156, .12); }
 .run-status[data-status="failed"] { background: var(--error); }
-.run-status[data-status="complete"] { background: var(--info); }
+.run-status[data-status="completed"] { background: var(--info); }
 .run-name { min-width: 0; flex: 1; display: grid; gap: .2rem; }
 .run-name strong, .run-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .run-name strong { font-size: .82rem; font-weight: 650; }

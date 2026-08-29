@@ -2,6 +2,31 @@ export const DEFAULT_EVENT_WINDOW = 120;
 export const EVENT_WINDOW_STEP = 120;
 export const TIMELINE_FILTERS = new Set(["all", "signal", "errors"]);
 
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
+/** Resolve viewer API configuration without ever crossing the viewer origin. */
+export function resolveLoopbackBase(value, locationHref) {
+  const location = new URL(locationHref);
+  if (!LOOPBACK_HOSTS.has(location.hostname)) return new URL(location.origin);
+  try {
+    const candidate = new URL(value || ".", location);
+    return candidate.origin === location.origin && LOOPBACK_HOSTS.has(candidate.hostname)
+      ? new URL(`${candidate.origin}${candidate.pathname.endsWith("/") ? candidate.pathname : `${candidate.pathname}/`}`)
+      : new URL(location.origin);
+  } catch {
+    return new URL(location.origin);
+  }
+}
+
+export function resolveLoopbackEndpoint(value, baseHref, fallbackPath) {
+  const base = new URL(baseHref);
+  const candidate = new URL(value || fallbackPath, base);
+  if (candidate.origin !== base.origin || !LOOPBACK_HOSTS.has(candidate.hostname)) {
+    throw new Error("Live Console endpoint must remain on the loopback viewer origin");
+  }
+  return candidate;
+}
+
 export function isLowInformationEvent(event) {
   return event?.type === "runner.message"
     && event?.stream !== "stderr"

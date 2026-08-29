@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -158,6 +158,36 @@ test("Live Console exposes a validated Codex desktop code font size to the viewe
   assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 9\n"), null);
   assert.equal(parseCodexCodeFontSize("[other]\ncodeFontSize = 22\n"), null);
   assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 18.5 # preferred\n"), 18.5);
+});
+
+test("Live Console publishes bounded history limits and canonical terminal status", async () => {
+  const fixture = makeViewerFixture();
+  const console = await startLiveConsole({ viewerRoot: fixture.root, maxRuns: 1, maxEventsPerRun: 1 });
+  try {
+    console.publish(event("run-status", 1, { type: "run.completed", data: { status: "complete" } }));
+    const snapshot = console.snapshot();
+    assert.deepEqual(snapshot.limits, { maxRuns: 1, maxEventsPerRun: 1 });
+    assert.equal(snapshot.runs[0].status, "completed");
+  } finally {
+    await console.close();
+    fixture.cleanup();
+  }
+});
+
+test("Live Console refuses static symlink escapes outside viewerRoot", async () => {
+  const fixture = makeViewerFixture();
+  const outside = path.join(os.tmpdir(), `cli-agent-runner-outside-${Date.now()}.txt`);
+  writeFileSync(outside, "secret");
+  symlinkSync(outside, path.join(fixture.root, "escape.txt"));
+  const console = await startLiveConsole({ viewerRoot: fixture.root });
+  try {
+    const response = await fetch(`${console.viewerUrl.replace(/\/\?.*/, "")}/escape.txt`);
+    assert.equal(response.status, 403);
+  } finally {
+    await console.close();
+    fixture.cleanup();
+    rmSync(outside, { force: true });
+  }
 });
 
 function event(runId, sequence, overrides = {}) {

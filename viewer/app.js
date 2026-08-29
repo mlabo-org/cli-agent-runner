@@ -4,11 +4,13 @@ import {
   buildTimelineView,
   isErrorEvent,
   isLowInformationEvent,
+  resolveLoopbackBase,
+  resolveLoopbackEndpoint,
 } from "./timeline-model.js";
 
 const query = new URLSearchParams(window.location.search);
 const token = query.get("token");
-const apiBase = new URL(query.get("apiBase") || ".", window.location.href);
+const apiBase = resolveLoopbackBase(query.get("apiBase"), window.location.href);
 const snapshotPath = query.get("snapshotPath") || "/api/snapshot";
 const eventsPath = query.get("eventsPath") || "/api/events";
 const configuredCodeFontSize = Number(query.get("codeFontSize"));
@@ -30,10 +32,11 @@ const state = {
   runs: new Map(), selectedRunId: null, selectedEvent: null, eventSource: null,
   timelineFilter: "all", visibleEventCount: DEFAULT_EVENT_WINDOW, followLatest: true,
   expandedGroups: new Set(), renderFrame: null, suppressTimelineScroll: false, timelineRenderVersion: 0,
+  maxRuns: 25, maxEventsPerRun: 500,
 };
 
 function endpoint(path) {
-  const url = new URL(path, apiBase);
+  const url = resolveLoopbackEndpoint(path, apiBase.href, "/api/snapshot");
   if (token) url.searchParams.set("token", token);
   return url;
 }
@@ -60,9 +63,12 @@ function normalizeEnvelope(input) {
 }
 
 function deriveStatus(event, prior = "running") {
+  const declared = typeof event.data?.status === "string" ? event.data.status : "";
+  if (/^(?:complete|completed|success|succeeded)$/i.test(declared)) return "completed";
+  if (/^(?:fail|failed|failure|error|timeout|cancel|cancelled|canceled)$/i.test(declared)) return "failed";
   const type = event.type.toLowerCase();
   if (/fail|error|timeout|cancel/.test(type)) return "failed";
-  if (/complete|success|exit|finish|end/.test(type)) return "complete";
+  if (/complete|success|exit|finish|end/.test(type)) return "completed";
   if (/start|spawn|stdout|stderr|activity|progress/.test(type)) return "running";
   return prior;
 }
@@ -82,11 +88,25 @@ function upsertEvent(input) {
   if (Number.isSafeInteger(event.data?.depth) && event.data.depth >= 0) run.depth = event.data.depth;
   if (["leaf", "local_orchestrator"].includes(event.data?.delegationMode)) run.delegationMode = event.data.delegationMode;
   if (typeof event.data?.focusScope === "string" && event.data.focusScope) run.focusScope = event.data.focusScope;
+  if (run.events.length > state.maxEventsPerRun) {
+    run.events.splice(0, run.events.length - state.maxEventsPerRun);
+  }
   state.runs.set(run.runId, run);
+  while (state.runs.size > state.maxRuns) {
+    const oldestRunId = state.runs.keys().next().value;
+    state.runs.delete(oldestRunId);
+    if (state.selectedRunId === oldestRunId) state.selectedRunId = null;
+  }
   if (!state.selectedRunId) state.selectedRunId = run.runId;
 }
 
 function hydrateSnapshot(payload) {
+  if (payload?.limits && Number.isSafeInteger(payload.limits.maxRuns) && payload.limits.maxRuns > 0) {
+    state.maxRuns = payload.limits.maxRuns;
+  }
+  if (payload?.limits && Number.isSafeInteger(payload.limits.maxEventsPerRun) && payload.limits.maxEventsPerRun > 0) {
+    state.maxEventsPerRun = payload.limits.maxEventsPerRun;
+  }
   const runs = Array.isArray(payload) ? payload : Array.isArray(payload?.runs) ? payload.runs : [];
   for (const candidate of runs) {
     if (candidate?.events) {
