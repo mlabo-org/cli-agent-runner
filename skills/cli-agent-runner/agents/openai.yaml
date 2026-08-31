@@ -1,0 +1,4 @@
+interface:
+  display_name: "CLI Agent Runner"
+  short_description: "Run CLI workers and brokered descendants with an IAB Live Console"
+  default_prompt: "Use $cli-agent-runner to run or orchestrate a scoped CLI worker with the default-on Live Console."
