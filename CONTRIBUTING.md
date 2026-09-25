@@ -9,7 +9,7 @@ CLI Agent Runnerへの改善を歓迎します。一つの変更は一つの目�
 - Use Node.js 22 or later.
 - Read the repository-root `AGENTS.md`. Its installation route activates only for an explicit install request; ordinary development must not mutate a marketplace or installed cache.
 - Check `git status` and preserve unrelated work.
-- Treat this repository as source of truth. Never edit `~/.codex/plugins/cache/` as source.
+- Treat this repository as source of truth. Never edit `~/.claude/plugins/cache/` as source.
 
 ## Implementation boundaries / 実装境界
 

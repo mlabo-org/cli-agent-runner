@@ -23,7 +23,7 @@ If the repository is not already at that location:
 3. If the destination exists, inspect it before acting. Continue only when it is this repository and no unresolved user change would be overwritten.
 4. Stop and report the exact collision when the destination is a different repository, has ambiguous provenance, or cannot be preserved. Do not delete, move, reset, or overwrite it.
 
-Run all remaining commands from the canonical source location. Do not substitute a maintainer path or write inside `~/.codex/plugins/cache/`.
+Run all remaining commands from the canonical source location. Do not substitute a maintainer path or write inside `~/.claude/plugins/cache/`.
 
 ## Preconditions
 

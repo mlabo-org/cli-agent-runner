@@ -221,7 +221,7 @@ Use the source CLI when the user wants to test source-tree behavior before plugi
    When `run --runner <id>` exits zero and the scope guard passes, or all declared orchestration jobs succeed in scope, the process result is complete and terminal. Store the minimal completed result and do not invoke `collect`, `finalize`, `verify-assignments`, `doctor`, reviewer, or another post-success validator.
    Use `--delegation-mode local_orchestrator` only when the assigned worker owns a coherent responsibility whose bounded internal helper split remains local to that worker. The prompt exposes the worker-only `delegate` command. Do not invoke `delegate` from the parent shell; it fails closed without the runner-owned broker environment.
 10. Ensure generated assignments and runner prompts carry the known producer requirements before launch. A successful `run --runner` result or successful orchestration bypasses every collection, lifecycle, Contract Coverage, and metacognitive post-success gate. Failed or blocked output bypasses the quiet-worker stale path and enters only cause-bound failure handling.
-11. Treat marketplace registration, `~/.codex/plugins/cache/` refresh, and Codex restart/new-thread activation as separate work unless the user explicitly includes them.
+11. Treat marketplace registration, `~/.claude/plugins/cache/` refresh, and Codex restart/new-thread activation as separate work unless the user explicitly includes them.
 
 If source CLI output still names legacy `docs/codex`, treat that as source implementation drift to report or fix under the active task scope. Do not let legacy output redefine the current skill contract.
 
@@ -247,8 +247,8 @@ If source CLI output still names legacy `docs/codex`, treat that as source imple
 
 - Edit jobsite files only inside the active task scope.
 - In cross-repo invocation, do not edit the invocation repository merely because Codex or the source CLI was launched there. Edit the invocation repository only when it is also the resolved jobsite or is explicitly inside the active task scope.
-- Treat plugin source directories as source of truth. Do not patch `~/.codex/plugins/cache/` as the primary edit target.
-- Do not edit `~/.codex/plugins/cache/`, marketplace files, or plugin activation state unless the user explicitly includes that in the active task scope.
+- Treat plugin source directories as source of truth. Do not patch `~/.claude/plugins/cache/` as the primary edit target.
+- Do not edit `~/.claude/plugins/cache/`, marketplace files, or plugin activation state unless the user explicitly includes that in the active task scope.
 - Do not auto-edit tracked `.gitignore` to hide `.cli-agent-runner/`. Use target `.git/info/exclude` for the local workflow-state ignore rule.
 - Do not edit legacy `docs/codex` as active workflow state. Edit it only when the active task is an explicit migration, cleanup, or legacy-document maintenance task.
 - Preserve unrelated user or worker changes. If another change appears in scope, work around it or report the conflict; do not revert it.
@@ -257,7 +257,7 @@ If source CLI output still names legacy `docs/codex`, treat that as source imple
 ## Source And Cache Boundary
 
 - Source repository changes take effect for direct source CLI runs immediately.
-- Installed plugin behavior uses the cached plugin copy under `~/.codex/plugins/cache/` and may require a refresh plus Codex restart or a new thread before the updated skill, agent metadata, CLI, or assets are active.
+- Installed plugin behavior uses the cached plugin copy under `~/.claude/plugins/cache/` and may require a refresh plus Codex restart or a new thread before the updated skill, agent metadata, CLI, or assets are active.
 - Refresh cache only from validated source and only for the named plugin in scope. Do not refresh broadly or edit cache files directly.
 - When cache activation is out of scope, report that source is updated but plugin activation is pending cache refresh/restart.
 

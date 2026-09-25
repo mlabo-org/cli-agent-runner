@@ -364,7 +364,7 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
 - When the source change is intended for publication, commit the validated source
   change before refreshing cache.
 - Broad cache refresh requires user confirmation.
-- Do not edit `~/.codex/plugins/cache/` as the primary source of truth.
+- Do not edit `~/.claude/plugins/cache/` as the primary source of truth.
 
 ## Operational Instruction
 
