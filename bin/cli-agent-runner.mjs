@@ -1189,7 +1189,7 @@ Boundaries:
 ${packet.jobId ? `- You own only owner_scope ${packet.scope}; do not edit or claim work outside that owner scope.\n` : ""}- ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
 ${packet.focusScope ? `- Your enforceable child scope is focus_scope ${packet.focusScope}; do not edit or claim work outside it.\n` : ""}- Preserve unrelated user or worker changes.
 - Do not commit.
-- Do not edit ~/.codex/plugins/cache directly.
+- Do not edit ~/.claude/plugins/cache directly.
 - Do not claim success for unavailable, skipped, or failed checks.
 - ${renderFeatureProfilePromptGuidance(packet)}
 - ${DEBUG_INTEGRITY}

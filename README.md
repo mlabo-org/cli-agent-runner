@@ -209,7 +209,7 @@ See [`docs/live-console.md`](docs/live-console.md) for the event, token, IAB han
 - Live Console binds to loopback and requires its generated token. Treat the full tokenized URL as sensitive local telemetry; do not paste it into commits, logs, issues, or remote messages.
 - Runner profiles execute local commands with their configured arguments and inherited environment. Treat third-party runner JSON as executable code, review it before use, and keep custom config outside worker-writable jobsites.
 - Machine scopes are fail-closed post-run Git change checks, not write containment. They do not see ignored or out-of-repository writes and do not replace the selected provider's own permission model or an OS sandbox.
-- Plugin source is authoritative. Never patch `~/.codex/plugins/cache/` directly.
+- Plugin source is authoritative. Never patch `~/.claude/plugins/cache/` directly.
 
 For vulnerability reports, see [`SECURITY.md`](SECURITY.md).
 
@@ -386,7 +386,7 @@ event、token、IAB handoff、parent-child lineageの契約は[`docs/live-consol
 - Live Consoleはloopbackへbindし、生成tokenを要求します。token付きURL全体をsensitiveなlocal telemetryとして扱い、commit、log、issue、remote messageへ貼らないでください。
 - runner profileは設定されたargumentと継承environmentでlocal commandを実行します。third-party runner JSONは実行可能codeとして使用前に確認し、custom configはworkerが書き込めるjobsite外へ置いてください。
 - machine scopeはfail-closedな実行後Git変更検査であり、write containmentではありません。ignored pathやrepository外への書き込みは検出せず、選択provider自身のpermission modelやOS sandboxを置き換えません。
-- plugin sourceが正本です。`~/.codex/plugins/cache/`を直接patchしないでください。
+- plugin sourceが正本です。`~/.claude/plugins/cache/`を直接patchしないでください。
 
 脆弱性報告は[`SECURITY.md`](SECURITY.md)を参照してください。
 
