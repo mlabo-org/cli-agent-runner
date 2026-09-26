@@ -46,7 +46,7 @@ test("skill metadata routes built-in and configured CLI workers plus Live Consol
   assert.match(skill, /Direct CLI `run\|orchestrate --runner <id>` without a URL starts an owned console by default/i);
   assert.match(skill, /If the default console cannot start or its viewer cannot be opened, stop before target intake or worker launch/i);
   assert.match(skill, /Before yielding a user-input question, keep the standalone console process running/i);
-  assert.match(skill, /finalize its IAB tab with `status: handoff`/i);
+  assert.match(skill, /leave its IAB tab open as the handoff state/i);
   assert.match(skill, /On the resumed turn, restore the Live Console before continuing project work/i);
   assert.match(skill, /Never resume headless merely because a console was opened in an earlier turn/i);
   assert.match(skill, /Task identity remains top-level/i);
