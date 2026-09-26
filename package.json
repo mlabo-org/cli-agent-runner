@@ -32,8 +32,6 @@
     "check": "npm test",
     "test:cli": "node --test tests/metacognitive-gate.test.mjs tests/workflow-state.test.mjs",
     "test:live": "node --test tests/live-console.test.mjs tests/live-runner.test.mjs",
-    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd .",
-    "plugin:install:check": "node scripts/install-plugin.mjs --check",
-    "plugin:install": "node scripts/install-plugin.mjs --install"
+    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd ."
   }
 }

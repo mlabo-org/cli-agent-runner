@@ -7,8 +7,8 @@ description: >-
 # CLI Agent Runner
 
 この `SKILL.md` は、この skill が選択された場合に適用される局所実行契約である。
-Codex は、本書の発火前提、作業手順、ツール境界、ファイル境界、出力形式を、この skill のスコープ内で拘束力のある実行条件として扱う。
-本書は、システム指示、開発者指示、ユーザーの明示要求、適用される `AGENTS.md`、より局所の実行契約を上書きしない。
+Claude Code は、本書の発火前提、作業手順、ツール境界、ファイル境界、出力形式を、この skill のスコープ内で拘束力のある実行条件として扱う。
+本書は、システム指示、開発者指示、ユーザーの明示要求、適用される `CLAUDE.md`、より局所の実行契約を上書きしない。
 
 ## Trigger Boundary
 
@@ -28,7 +28,7 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - If no Git root can be resolved for the jobsite, do not invent a state path. Report the blocker or ask for the intended repository root.
 - Before creating or updating the jobsite repository's `<git-root>/.cli-agent-runner/`, ensure that repository's `.git/info/exclude` ignores `.cli-agent-runner/`. Add only that local exclude entry when it is missing.
 - Do not auto-edit the repository's tracked `.gitignore` to hide CLI Agent Runner state. Edit tracked ignore policy only when the user explicitly requests that repository policy change.
-- Resolve `<plugin-root>` as the nearest ancestor of this `SKILL.md` that contains `.codex-plugin/plugin.json`. Use that resolved root for every bundled CLI invocation; do not assume a maintainer-specific home directory or source checkout path.
+- Resolve `<plugin-root>` as the nearest ancestor of this `SKILL.md` that contains `package.json`. Use that resolved root for every bundled CLI invocation; do not assume a maintainer-specific home directory or source checkout path.
 - Unless the current user explicitly requests silent mode, no console, or Live Console OFF, the first action after trigger is to launch `live-console --port 0` in one persistent owned terminal, read its printed viewer URL, and open it in Codex IAB. Do this before target resolution, project intake, assignment construction, or any Grok, Claude, Codex, or configured runner launch. Lack of a Live Console request is not an OFF instruction.
 - After the default console is visibly standing by, determine `invocation_cwd`, resolve the jobsite from the explicit target or default cwd rule, read the local `AGENTS.md` chain that applies to the jobsite when available, inspect the jobsite repository shape, check Git state, resolve `<git-root>`, inspect existing `.cli-agent-runner` state, inspect `.git/info/exclude`, and identify legacy `docs/codex` material only as migration input.
 - During source upgrade work, direct execution of the source CLI runs source-tree behavior: `node "<plugin-root>/bin/cli-agent-runner.mjs" ...`. This validates source behavior, not installed plugin activation.
@@ -47,7 +47,7 @@ Codex は、本書の発火前提、作業手順、ツール境界、ファイ�
 - Do not evaluate a successful run or orchestration with a separate worker-report conformance contract, mark it parent-acceptance-pending, require a follow-up `collect`, or chain `finalize`, `verify-assignments`, `doctor`, reviewer, or another validator after success. Explicitly requested collection/finalization workflows remain separate commands, not automatic post-success gates.
 - The parent owns the assignment, allowed scope, acceptance decision, and user-facing synthesis. The CLI child worker owns only the scoped transformation and its returned result material.
 - Every `role` is a caller-defined responsibility label. Accept any non-empty single-line value, including names created for the current task; CLI Agent Runner must not preallocate, recommend, or enforce a built-in role roster.
-- Installed plugin activation is controlled by refreshing the plugin cache from validated source and then restarting Codex or opening a new thread when required. Do not claim a source CLI run proves cached plugin activation.
+- Installed plugin activation is controlled by refreshing the plugin cache from validated source with `claude-plugin-refresh` and then restarting the Claude app or opening a new session when required. Do not claim a source CLI run proves cached plugin activation.
 - Maintain `<git-root>/.cli-agent-runner/` as the workflow SSOT for the active job.
 - When the user confirms a design or operating decision, record it as an accepted decision, convert it into actionable specification, and audit execution against it after implementation.
 - `collect` and `finalize` remain available for explicitly requested manual workflow-state collection and task-wide coverage. They are not required after a successful `run --runner` result or successful orchestration.

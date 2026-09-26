@@ -1,3 +1,0 @@
-display_name: CLI Agent Runner
-short_description: Run CLI workers, brokered local descendants, or parallel leaf jobs with a default-on IAB Live Console.
-default_prompt: Open IAB Live Console first; name roles from actual responsibilities, use run, explicit local_orchestrator delegation, or orchestrate leaf jobs, then stop after success.
