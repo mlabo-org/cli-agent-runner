@@ -15,18 +15,6 @@ Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し�
 
 <p align="center"><em>One delegated implementation, visible while it runs, followed by the actual browser-game results. / 委託実装を実行中から可視化し、そのまま得られたブラウザゲームの成果例。</em></p>
 
-## Install with Codex / Codexでインストール
-
-This repository is agent-first installable. Give its URL to Codex and paste this request:
-
-> Install CLI Agent Runner from https://github.com/mlabo-org/cli-agent-runner into my local Codex environment. Read the repository-root AGENTS.md first and follow its installation route. Resolve my own home directory, preserve existing marketplace entries, never edit the installed cache directly, and report the installed version plus the required restart and fresh-task verification. Do not require Claude or Grok unless I ask to use those profiles.
-
-このリポジトリは、取得した側のCodexが初見で導入できる構成です。CodexにURLと次の依頼を渡してください。
-
-> https://github.com/mlabo-org/cli-agent-runner から CLI Agent Runner を私のローカルCodex環境へインストールして。最初にリポジトリ直下の AGENTS.md を読み、そこに定義された導入経路に従って。私自身のホームディレクトリを解決し、既存marketplaceエントリを保全し、インストール済みcacheは直接編集せず、導入されたversionと再起動・新規taskでの確認手順まで報告して。ClaudeまたはGrokのprofileを使うよう頼むまでは、それらを導入条件にしないで。
-
-The root `AGENTS.md` activates only for an explicit installation request. The complete mutation and stop-condition contract is in [`docs/INSTALL_FOR_CODEX.md`](docs/INSTALL_FOR_CODEX.md); normal repository work never triggers installation.
-
 ## English
 
 ### What it does
@@ -82,40 +70,22 @@ After a successful in-scope process result, the runner stops. It does not automa
 
 ### Requirements
 
-- macOS with Codex desktop and a Codex CLI that exposes plugin commands.
+- macOS with Claude Code.
 - Git.
 - Node.js 22 or later. The runtime uses Node standard libraries and has no package dependencies.
 - An authenticated CLI for each selected runner profile:
 
 | Profile | Command | Required only when selected |
 |---|---|---|
-| `codex-cli` | `codex` | Yes; also used for plugin installation |
+| `codex-cli` | `codex` | Yes |
 | `claude-cli` | `claude` | Yes |
 | `grok-cli` | `grok` | Yes |
 
 Installing the plugin does not install or authenticate provider CLIs.
 
-### Manual installation
+### Installation
 
-The agent-first route above is preferred. For a manual install, use the canonical personal-plugin path. The commands below clone only when the destination does not exist. An existing destination must be the canonical repository with a matching `origin` and no unresolved changes; otherwise stop without overwriting it.
-
-```sh
-REPO=https://github.com/mlabo-org/cli-agent-runner.git
-DEST="$HOME/plugins/cli-agent-runner"
-if [ -e "$DEST" ]; then
-  test -d "$DEST/.git"
-  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
-  test -z "$(git -C "$DEST" status --porcelain)"
-else
-  git clone "$REPO" "$DEST"
-fi
-cd "$DEST"
-npm run check
-npm run plugin:install:check
-npm run plugin:install
-```
-
-`plugin:install:check` is read-only. `plugin:install` preserves unrelated entries in `~/.agents/plugins/marketplace.json`, installs through `codex plugin add`, and verifies the installed manifest version. Restart Codex afterward and open a fresh task.
+The source of truth is `~/.claude/local-plugins/plugins/cli-agent-runner/`, registered in the `suzuki-local-plugins` Claude Code marketplace. After `npm run check` passes, refresh the installed plugin with `claude-plugin-refresh`; it stages only Git-visible files and generates `.claude-plugin/plugin.json`. Never edit `~/.claude/plugins/cache/` directly. Open a new Claude Code session afterward.
 
 Fresh-task verification prompt:
 
@@ -259,40 +229,22 @@ scope内でprocess resultが成功した時点でrunnerは終了します。revi
 
 ### 必要環境
 
-- Codex desktopとplugin commandを備えたCodex CLIが動くmacOS。
+- Claude Codeが動くmacOS。
 - Git。
 - Node.js 22以降。runtimeはNode標準libraryのみを使い、package dependencyはありません。
 - 実際に選ぶrunner profileに対応した認証済みCLI。
 
 | Profile | Command | 必要になる時点 |
 |---|---|---|
-| `codex-cli` | `codex` | 選択時。plugin導入にも使用 |
+| `codex-cli` | `codex` | 選択時のみ |
 | `claude-cli` | `claude` | 選択時のみ |
 | `grok-cli` | `grok` | 選択時のみ |
 
 pluginの導入はprovider CLIのインストールや認証を行いません。
 
-### 手動インストール
+### インストール
 
-通常は冒頭のagent-first導入を使ってください。手動の場合もpersonal pluginのcanonical pathへ置きます。下記のコマンドはdestinationが存在しない場合だけcloneします。既存destinationはcanonical repositoryで、`origin`が一致し、未解決の変更がない場合だけ継続し、それ以外は上書きせず停止します。
-
-```sh
-REPO=https://github.com/mlabo-org/cli-agent-runner.git
-DEST="$HOME/plugins/cli-agent-runner"
-if [ -e "$DEST" ]; then
-  test -d "$DEST/.git"
-  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
-  test -z "$(git -C "$DEST" status --porcelain)"
-else
-  git clone "$REPO" "$DEST"
-fi
-cd "$DEST"
-npm run check
-npm run plugin:install:check
-npm run plugin:install
-```
-
-`plugin:install:check`はread-onlyです。`plugin:install`は`~/.agents/plugins/marketplace.json`の無関係なentryを保全し、`codex plugin add`で導入し、manifest versionまで確認します。完了後にCodexを再起動し、新しいtaskを開いてください。
+正本は`~/.claude/local-plugins/plugins/cli-agent-runner/`で、Claude Codeの`suzuki-local-plugins` marketplaceに登録されています。`npm run check`が通った後、`claude-plugin-refresh`でインストール済みpluginを更新します。これはGit管理下のファイルだけをstageし、`.claude-plugin/plugin.json`を生成します。`~/.claude/plugins/cache/`は直接編集しないでください。完了後は新しいClaude Codeセッションを開いてください。
 
 新規taskでの確認prompt:
 

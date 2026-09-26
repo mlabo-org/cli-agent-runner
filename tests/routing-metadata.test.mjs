@@ -10,14 +10,7 @@ function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-function yamlScalar(document, key) {
-  const match = document.match(new RegExp(`^${key}:\\s*(.+)$`, "m"));
-  assert.ok(match, `${key} must be a single-line YAML scalar`);
-  return match[1].trim();
-}
-
-test("discovery metadata routes built-in and configured CLI workers plus Live Console", () => {
-  const manifest = JSON.parse(read(".codex-plugin/plugin.json"));
+test("skill metadata routes built-in and configured CLI workers plus Live Console", () => {
   const defaultRunners = JSON.parse(read("config/runners.default.json"));
   const skill = read("skills/cli-agent-runner/SKILL.md");
   const frontmatter = skill.match(/^---\n([\s\S]*?)\n---\n/);
@@ -30,90 +23,6 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
     .filter((line) => line.startsWith("  "))
     .map((line) => line.trim())
     .join(" ");
-
-  // The plugin manifest version is the fixed Codex compatibility/cache key.
-  // Product and capability release versions have separate ownership and must
-  // not be required to match this value.
-  assert.equal(manifest.version, "0.1.0");
-
-  assert.match(manifest.description, /Run scoped Grok, Claude, Codex, or custom CLI workers/i);
-  assert.match(manifest.description, /Codex IAB Live Console/i);
-  assert.match(manifest.description, /Trigger on CLI Agent Runner, local orchestrator, Live Console, Grok\/Claude CLI/i);
-  assert.match(
-    manifest.description,
-    /excludes generic coding and ordinary official subagents/i,
-  );
-  assert.deepEqual(manifest.keywords, [
-    "cli-agent-runner",
-    ".cli-agent-runner",
-    "codex-cli",
-    "claude-cli",
-    "grok-cli",
-    "custom-cli-runner",
-    "runner-config-json",
-    "cli-subagent",
-    "process-runner-result",
-    "stdout-stderr",
-    "iab-live-console",
-    "runner-streaming",
-    "parallel-leaf-orchestration",
-    "local-orchestrator",
-    "delegation-broker",
-    "delegated-run-lineage",
-    "jobs-file",
-    "caller-defined-roles",
-    "cli-agent-runner-continuation",
-  ]);
-  assert.deepEqual(manifest.interface.capabilities, [
-    "Codex, Claude, And Grok CLI Worker Launch",
-    "User-Configured CLI Runner Registry",
-    "stdout/stderr And Final-Message Capture",
-    "Default-On Prestarted Token-Protected IAB Live Console",
-    "Live Console Continuity Across User-Input Pauses",
-    "Provider-Neutral Text And JSON Event Streaming",
-    "Protected Runner-Profile Delegation Ceilings",
-    "Runner-Brokered Local Descendant Execution",
-    "Live Console Parent-Child Run Lineage",
-    "Parallel Independent Leaf-Job Orchestration",
-    "Caller-Defined Responsibility Roles",
-    "Terminal Minimal Result For Successful Runs",
-    "Machine-Checkable Scope Guard",
-  ]);
-  assert.match(manifest.interface.shortDescription, /IAB Live Console/i);
-  assert.match(manifest.interface.longDescription, /accepts additional or overridden profiles from runner JSON/i);
-  assert.match(manifest.interface.longDescription, /Every role is a caller-defined responsibility label/i);
-  assert.match(manifest.interface.longDescription, /preallocates and enforces no role roster/i);
-  assert.match(manifest.interface.longDescription, /one validated command-and-arguments path/i);
-  assert.match(manifest.interface.longDescription, /`run --runner <id>` launches exactly one parent-managed worker/i);
-  assert.match(manifest.interface.longDescription, /`orchestrate --runner <id> --jobs-file <json>` concurrently launches parent-declared independent responsibility leaves/i);
-  assert.match(manifest.interface.longDescription, /version-1 jobs file/i);
-  assert.match(manifest.interface.longDescription, /human responsibility owners and their dependency graph/i);
-  assert.match(manifest.interface.longDescription, /non-overlapping writable scopes/i);
-  assert.match(manifest.interface.longDescription, /materially reduces elapsed time/i);
-  assert.match(manifest.interface.longDescription, /never substitutes for sibling-job dispatch/i);
-  assert.match(manifest.interface.longDescription, /`--delegation-mode local_orchestrator` gives that worker a runner-owned loopback broker/i);
-  assert.match(manifest.interface.longDescription, /Codex, Claude, Grok, and custom profiles use this same provider-neutral broker path/i);
-  assert.match(manifest.interface.longDescription, /parent-child run IDs/i);
-  assert.match(manifest.interface.longDescription, /starts and opens one token-protected Codex IAB Live Console at skill selection before worker preparation/i);
-  assert.match(manifest.interface.longDescription, /keeps it alive across user-confirmation pauses/i);
-  assert.match(manifest.interface.longDescription, /restores or reopens it before resuming/i);
-  assert.match(manifest.interface.longDescription, /shares it across all jobs with per-job and parent-child run IDs/i);
-  assert.match(manifest.interface.longDescription, /Direct runner commands also own a console by default/i);
-  assert.match(manifest.interface.longDescription, /only explicit silent or no-console selection disables it/i);
-  assert.match(manifest.interface.longDescription, /streams emitted stdout\/stderr or structured messages/i);
-  assert.match(manifest.interface.longDescription, /successful run or orchestration records its minimal completed result and stops/i);
-  assert.match(manifest.interface.longDescription, /reviewer, or validator chain/i);
-  assert.ok(
-    manifest.interface.defaultPrompt.every((prompt) =>
-      /CLI Agent Runner|\.cli-agent-runner|process-runner-result/.test(prompt),
-    ),
-    "every manifest prompt must route to the CLI worker workflow",
-  );
-  assert.ok(
-    manifest.interface.defaultPrompt.every((prompt) => prompt.length <= 128),
-    "every manifest prompt must satisfy the plugin manifest limit",
-  );
-  assert.ok(manifest.interface.defaultPrompt.length <= 3, "plugin manifest supports at most three default prompts");
 
   assert.ok(frontmatterDescription.length <= 320, "skill description must stay routing-budget concise");
   assert.match(frontmatterDescription.slice(0, 160), /^Run Grok, Claude, Codex, or custom CLI workers singly, with brokered descendants/i);
@@ -160,19 +69,4 @@ test("discovery metadata routes built-in and configured CLI workers plus Live Co
   assert.equal(defaultRunners.runners["grok-cli"].defaultHierarchyDepth, 1);
   assert.equal(defaultRunners.runners["codex-cli"].defaultHierarchyDepth, undefined);
   assert.equal(defaultRunners.runners["claude-cli"].defaultHierarchyDepth, undefined);
-});
-
-test("agents metadata advertises the run-or-orchestrate Live Console route", () => {
-  const metadata = read("agents/openai.yaml");
-  const shortDescription = yamlScalar(metadata, "short_description");
-  const defaultPrompt = yamlScalar(metadata, "default_prompt");
-
-  assert.match(shortDescription, /IAB Live Console/i);
-  assert.match(shortDescription, /CLI workers, brokered local descendants, or parallel leaf jobs/i);
-  assert.ok(defaultPrompt.length <= 240, "default_prompt must stay concise");
-  assert.match(defaultPrompt, /Open IAB Live Console first/i);
-  assert.match(defaultPrompt, /name roles from actual responsibilities/i);
-  assert.match(defaultPrompt, /explicit local_orchestrator delegation/i);
-  assert.match(defaultPrompt, /orchestrate leaf jobs/i);
-  assert.match(defaultPrompt, /stop after success/i);
 });
