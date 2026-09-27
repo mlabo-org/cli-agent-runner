@@ -4,7 +4,7 @@
 
 Run Codex, Claude, Grok, or a custom CLI as a scoped worker—with a default-on Live Console and an optional runner-owned delegation layer.
 
-Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し、既定ONのLive Consoleと、必要時だけ使うrunner所有のローカル再委託を提供するCodexプラグインです。
+Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し、既定ONのLive Consoleと、必要時だけ使うrunner所有のローカル再委託を提供するClaude Codeプラグインです。
 
 ![CLI Agent Runner Live Console showing a brokered Grok run](docs/assets/live-console-brokered-delegation.png)
 
@@ -19,7 +19,7 @@ Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し�
 
 ### What it does
 
-CLI Agent Runner gives a parent Codex task one provider-neutral process boundary for CLI workers:
+CLI Agent Runner gives a parent Claude Code task one provider-neutral process boundary for CLI workers:
 
 - `codex-cli`, `claude-cli`, and `grok-cli` are bundled profiles.
 - JSON configuration can add or override profiles without provider-specific execution code.
@@ -28,7 +28,7 @@ CLI Agent Runner gives a parent Codex task one provider-neutral process boundary
 - stdout, stderr, structured provider events, normalized results, and brokered child lineage can be observed in the loopback-only Live Console.
 - Repository scope is checked after execution. Out-of-scope changes remain an explicit failure.
 
-The plugin does not replace official Codex subagents. Use it when the user explicitly wants a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
+The plugin does not replace official Claude Code subagents (the Agent tool). Use it when the user explicitly wants a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
 
 ### Responsibility model
 
@@ -172,7 +172,7 @@ Runner configuration precedence is bundled defaults, user config, `CLI_AGENT_RUN
 
 Workflow state lives in the target Git repository's `.cli-agent-runner/` directory. The tool adds that directory to the target repository's local `.git/info/exclude`; it does not silently change the tracked `.gitignore`.
 
-See [`docs/live-console.md`](docs/live-console.md) for the event, token, IAB handoff, and parent-child lineage contract.
+See [`docs/live-console.md`](docs/live-console.md) for the event, token, browser-pane handoff, and parent-child lineage contract.
 
 ### Security boundaries
 
@@ -197,7 +197,7 @@ The complete test suite is the release check. See [`CONTRIBUTING.md`](CONTRIBUTI
 
 ### このプラグインが行うこと
 
-CLI Agent Runnerは、親Codex taskからCLI workerを起動するためのprovider非依存な実行境界を提供します。
+CLI Agent Runnerは、親Claude Code taskからCLI workerを起動するためのprovider非依存な実行境界を提供します。
 
 - `codex-cli`、`claude-cli`、`grok-cli`を標準profileとして同梱します。
 - JSON設定により、provider固有の実行分岐を追加せずprofileを追加・上書きできます。
@@ -206,7 +206,7 @@ CLI Agent Runnerは、親Codex taskからCLI workerを起動するためのprovi
 - stdout、stderr、providerのstructured event、正規化結果、broker経由のchild lineageをloopback専用Live Consoleで観測できます。
 - 実行後にrepository scopeを検査し、範囲外変更は明示的な失敗として残します。
 
-このプラグインはCodex公式subagentの代替ではありません。ユーザーがローカルCLI LLM、そのstreaming output、custom runner profile、またはLive Consoleを明示的に求めた場合に使います。
+このプラグインはClaude Code公式subagent（Agent tool）の代替ではありません。ユーザーがローカルCLI LLM、そのstreaming output、custom runner profile、またはLive Consoleを明示的に求めた場合に使います。
 
 ### 責務モデル
 
@@ -331,7 +331,7 @@ runner設定の優先順位は、bundled defaults、user config、`CLI_AGENT_RUN
 
 workflow stateは対象Git repositoryの`.cli-agent-runner/`に置かれます。toolは対象repositoryのlocalな`.git/info/exclude`へこのdirectoryを追加し、tracked `.gitignore`を暗黙変更しません。
 
-event、token、IAB handoff、parent-child lineageの契約は[`docs/live-console.md`](docs/live-console.md)を参照してください。
+event、token、browser-pane handoff、parent-child lineageの契約は[`docs/live-console.md`](docs/live-console.md)を参照してください。
 
 ### セキュリティ境界
 

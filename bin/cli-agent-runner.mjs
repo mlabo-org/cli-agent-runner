@@ -4526,7 +4526,7 @@ Commands:
            Validate independent version-1 jobs, append every assignment, launch all jobs in parallel with one runner and Live Console, then append results in jobs-file order. Owner scopes must be inside the top-level task scope and pairwise non-overlapping.
   delegate Worker-only local delegation client. It requires the runner-owned broker environment and cannot select a target, task identity, runner, or authority scope.
   live-console
-           Start the built-in token-protected loopback viewer server for IAB (the Claude app's built-in browser pane) and print its viewer and ingest URLs. Stop it with Ctrl-C.
+           Start the built-in token-protected loopback viewer server for the Claude Code built-in browser pane and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments
            Validate the caller-defined assignment contract and block missing task_id, epoch, scope, lifecycle, supervision, coding conduct, or debugging_integrity fields in modern runner packets.
   normalize-debugging-integrity

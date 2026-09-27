@@ -13,7 +13,7 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
    - The state directory is resolved from the jobsite/target repository git root,
      not from the invocation repository or plugin source repository unless that
      repository is also the target.
-   - `invocation_cwd` is the directory where Codex or the source CLI was launched.
+   - `invocation_cwd` is the directory where Claude Code or the source CLI was launched.
      `jobsite`, `target cwd`, and `target-cwd` identify the repository being
      planned, repaired, edited, or audited.
    - If no target is named, `invocation_cwd` remains the jobsite. This preserves
@@ -286,22 +286,22 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      JSON output and the `messages-json` adapter reconstructs assistant text for
      the existing stdout result source.
    - `live-console` starts a plugin-owned HTTP server bound to `127.0.0.1` and
-     prints a tokenized viewer URL suitable for Codex IAB. The server owns
+     prints a tokenized viewer URL suitable for the Claude Code browser pane. The server owns
      authenticated ingest, snapshot and SSE delivery, static viewer assets, and
      bounded ephemeral run history. It must not depend on AgentScope or private
-     Codex GUI IPC.
+     Claude app IPC.
    - Live Console is default-on. At skill selection, before target intake,
      assignment construction, or worker launch, the parent plugin skill starts
      one standalone `live-console --port 0` session, opens its tokenized viewer
-     URL in supported Codex IAB, and keeps the server ready for later runners.
+     URL in the Claude Code browser pane, and keeps the server ready for later runners.
    - The normal plugin-owned runner path uses
      `run --runner <id> --live-console-url <url>` to reuse that already visible
-     console. The parent owns persistent-terminal launch, supported IAB opening,
+     console. The parent owns persistent-terminal launch, browser-pane opening,
      pause/resume continuity, final observation, and cleanup when the task
      actually ends or the user stops it.
    - A blocking permission, approval, clarification, or target-selection
      question is an in-progress pause. The parent keeps the console process
-     running and hands off the IAB tab instead of closing either surface.
+     running and hands off the browser-pane tab instead of closing either surface.
    - On resume, the parent reclaims and checks the handed-off viewer before
      continuing. If the process or tab was lost, it starts and opens a
      replacement before intake, edits, or worker launch; resuming headless is
@@ -320,11 +320,11 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      as an implicit OFF request or hidden fallback.
    - `run --runner <id> --live-console-url <url>` publishes a versioned,
      provider-neutral envelope with `version`, `runId`, `sequence`, `timestamp`,
-     `type`, `stream`, `text`, and `data`. The parent Codex session owns opening
-     the printed localhost URL in IAB.
+     `type`, `stream`, `text`, and `data`. The parent Claude Code session owns opening
+     the printed localhost URL in the browser pane.
      This is the default plugin standby-console handoff and remains available for
      manually managed consoles; it is mutually exclusive with explicit owned or
-     OFF selectors. The CLI must not use private Codex GUI IPC.
+     OFF selectors. The CLI must not use private Claude app IPC.
    - Live Console transport is observation, not workflow state or artifact
      acceptance. `.cli-agent-runner/runner.md` remains the durable result record;
      a transport failure is reported separately from child execution status.

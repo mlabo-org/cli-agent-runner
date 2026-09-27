@@ -26,14 +26,14 @@ test("skill metadata routes built-in and configured CLI workers plus Live Consol
 
   assert.ok(frontmatterDescription.length <= 320, "skill description must stay routing-budget concise");
   assert.match(frontmatterDescription.slice(0, 160), /^Run Grok, Claude, Codex, or custom CLI workers singly, with brokered descendants/i);
-  assert.match(frontmatterDescription.slice(0, 160), /default-on IAB Live Console/i);
+  assert.match(frontmatterDescription.slice(0, 160), /default-on browser-pane Live Console/i);
   assert.match(frontmatterDescription, /Triggers: CLI Agent Runner, local orchestrator, Live Console, CLI LLM, runner JSON/i);
   assert.match(frontmatterDescription, /Silent\/no-console is explicit-only/i);
   assert.match(frontmatterDescription, /excludes official subagents/i);
 
   const triggerBoundary = skill.match(/## Trigger Boundary\n\n([\s\S]*?)\n## Core Contract/);
   assert.ok(triggerBoundary, "SKILL.md must define Trigger Boundary before Core Contract");
-  assert.match(triggerBoundary[1], /asks for its Live Console or IAB viewer/i);
+  assert.match(triggerBoundary[1], /asks for its Live Console or browser-pane viewer/i);
   assert.match(triggerBoundary[1], /asks for a CLI-spawned Codex, Claude, Grok, or configured worker/i);
   assert.match(triggerBoundary[1], /`run --runner <id>` for exactly one parent-managed worker/i);
   assert.match(triggerBoundary[1], /`run --runner <id> --delegation-mode local_orchestrator` for one parent-managed worker that may split bounded internal helper work/i);
@@ -46,7 +46,7 @@ test("skill metadata routes built-in and configured CLI workers plus Live Consol
   assert.match(skill, /Direct CLI `run\|orchestrate --runner <id>` without a URL starts an owned console by default/i);
   assert.match(skill, /If the default console cannot start or its viewer cannot be opened, stop before target intake or worker launch/i);
   assert.match(skill, /Before yielding a user-input question, keep the standalone console process running/i);
-  assert.match(skill, /leave its IAB tab open as the handoff state/i);
+  assert.match(skill, /leave its browser-pane tab open as the handoff state/i);
   assert.match(skill, /On the resumed turn, restore the Live Console before continuing project work/i);
   assert.match(skill, /Never resume headless merely because a console was opened in an earlier turn/i);
   assert.match(skill, /Task identity remains top-level/i);
