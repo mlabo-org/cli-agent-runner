@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { LIVE_EVENT_VERSION, createLiveEvent, parseCodexCodeFontSize, startLiveConsole } from "../lib/live-console.mjs";
+import { resolveAgentHost } from "../lib/agent-host.mjs";
 
 test("Live Console serves its viewer and protects ingest and read APIs with its generated token", async () => {
   const fixture = makeViewerFixture();
@@ -145,7 +146,7 @@ test("Live Console exposes a validated Codex desktop code font size to the viewe
   const fixture = makeViewerFixture();
   const configPath = path.join(fixture.root, "config.toml");
   writeFileSync(configPath, "[desktop]\ncodeFontSize = 18\n[desktop.appearanceDarkChromeTheme]\ncodeFontSize = 27\n");
-  const console = await startLiveConsole({ viewerRoot: fixture.root, codexConfigPath: configPath });
+  const console = await startLiveConsole({ viewerRoot: fixture.root, host: "codex", codexConfigPath: configPath });
   try {
     assert.equal(console.codeFontSize, 18);
     assert.equal(new URL(console.viewerUrl).searchParams.get("codeFontSize"), "18");
@@ -158,6 +159,26 @@ test("Live Console exposes a validated Codex desktop code font size to the viewe
   assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 9\n"), null);
   assert.equal(parseCodexCodeFontSize("[other]\ncodeFontSize = 22\n"), null);
   assert.equal(parseCodexCodeFontSize("[desktop]\ncodeFontSize = 18.5 # preferred\n"), 18.5);
+});
+
+test("Live Console under Claude Code ignores the Codex config and uses the default font size", async () => {
+  const fixture = makeViewerFixture();
+  const configPath = path.join(fixture.root, "config.toml");
+  writeFileSync(configPath, "[desktop]\ncodeFontSize = 18\n");
+  const console = await startLiveConsole({ viewerRoot: fixture.root, host: "claude_code", codexConfigPath: configPath });
+  try {
+    assert.equal(console.codeFontSize, 16);
+  } finally {
+    await console.close();
+    fixture.cleanup();
+  }
+});
+
+test("agent host resolves AGENT_HOST, then CLAUDECODE, then Codex", () => {
+  assert.equal(resolveAgentHost({ AGENT_HOST: "codex", CLAUDECODE: "1" }), "codex");
+  assert.equal(resolveAgentHost({ AGENT_HOST: "claude_code" }), "claude_code");
+  assert.equal(resolveAgentHost({ AGENT_HOST: "other", CLAUDECODE: "1" }), "claude_code");
+  assert.equal(resolveAgentHost({}), "codex");
 });
 
 test("Live Console publishes bounded history limits and canonical terminal status", async () => {
