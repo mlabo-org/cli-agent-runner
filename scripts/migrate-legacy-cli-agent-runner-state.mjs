@@ -34,15 +34,15 @@ const SKIP_DIR_NAMES = new Set([
 ]);
 const DEFAULT_MAX_DEPTH = 4;
 
-// Plugin and skill sources are owned per host: Codex keeps them in ~/plugins and
-// ~/.codex/skills, Claude Code in ~/.claude/local-plugins/plugins and ~/.claude/skills.
+// Plugin sources are shared in ~/plugins; skill sources are owned per host:
+// Codex keeps them in ~/.codex/skills, Claude Code in ~/.claude/skills.
 const HOST_SOURCE_ROOTS = {
   codex: {
     plugins: path.join(os.homedir(), "plugins"),
     skills: path.join(os.homedir(), ".codex", "skills"),
   },
   claude_code: {
-    plugins: path.join(os.homedir(), ".claude", "local-plugins", "plugins"),
+    plugins: path.join(os.homedir(), "plugins"),
     skills: path.join(os.homedir(), ".claude", "skills"),
   },
 };

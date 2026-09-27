@@ -1189,7 +1189,7 @@ Boundaries:
 ${packet.jobId ? `- You own only owner_scope ${packet.scope}; do not edit or claim work outside that owner scope.\n` : ""}- ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
 ${packet.focusScope ? `- Your enforceable child scope is focus_scope ${packet.focusScope}; do not edit or claim work outside it.\n` : ""}- Preserve unrelated user or worker changes.
 - Do not commit.
-- Do not edit ~/.claude/plugins/cache directly.
+- Do not edit ~/.codex/plugins/cache or ~/.claude/plugins/cache directly.
 - Do not claim success for unavailable, skipped, or failed checks.
 - ${renderFeatureProfilePromptGuidance(packet)}
 - ${DEBUG_INTEGRITY}
@@ -4526,7 +4526,7 @@ Commands:
            Validate independent version-1 jobs, append every assignment, launch all jobs in parallel with one runner and Live Console, then append results in jobs-file order. Owner scopes must be inside the top-level task scope and pairwise non-overlapping.
   delegate Worker-only local delegation client. It requires the runner-owned broker environment and cannot select a target, task identity, runner, or authority scope.
   live-console
-           Start the built-in token-protected loopback viewer server for the Claude Code built-in browser pane and print its viewer and ingest URLs. Stop it with Ctrl-C.
+           Start the built-in token-protected loopback viewer server for the host browser (Codex IAB or the Claude Code browser pane) and print its viewer and ingest URLs. Stop it with Ctrl-C.
   verify-assignments
            Validate the caller-defined assignment contract and block missing task_id, epoch, scope, lifecycle, supervision, coding conduct, or debugging_integrity fields in modern runner packets.
   normalize-debugging-integrity
