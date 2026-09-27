@@ -16,6 +16,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { resolveAgentHost } from "../lib/agent-host.mjs";
 
 const TOOL = "cli-agent-runner legacy state migration";
 const LEGACY_RELS = ["docs/codex", "doc/codex"];
@@ -24,6 +25,7 @@ const SKIP_DIR_NAMES = new Set([
   ".cli-agent-runner",
   ".cli-agent-runner-migration-backups",
   ".codex",
+  ".claude",
   "node_modules",
   "vendor",
   "dist",
@@ -32,6 +34,19 @@ const SKIP_DIR_NAMES = new Set([
 ]);
 const DEFAULT_MAX_DEPTH = 4;
 
+// Plugin and skill sources are owned per host: Codex keeps them in ~/plugins and
+// ~/.codex/skills, Claude Code in ~/.claude/local-plugins/plugins and ~/.claude/skills.
+const HOST_SOURCE_ROOTS = {
+  codex: {
+    plugins: path.join(os.homedir(), "plugins"),
+    skills: path.join(os.homedir(), ".codex", "skills"),
+  },
+  claude_code: {
+    plugins: path.join(os.homedir(), ".claude", "local-plugins", "plugins"),
+    skills: path.join(os.homedir(), ".claude", "skills"),
+  },
+};
+const HOST_SOURCES = HOST_SOURCE_ROOTS[resolveAgentHost()];
 const DEFAULT_ROOTS = [
   {
     label: "Desktop",
@@ -39,13 +54,14 @@ const DEFAULT_ROOTS = [
   },
   {
     label: "plugin source canonical location",
-    path: path.join(os.homedir(), "plugins"),
+    path: HOST_SOURCES.plugins,
   },
   {
     label: "skill source canonical location",
-    path: path.join(os.homedir(), ".codex", "skills"),
+    path: HOST_SOURCES.skills,
   },
 ];
+const CACHE_ROOT_SUFFIXES = ["/.codex/plugins/cache", "/.claude/plugins/cache"];
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -593,7 +609,7 @@ function renderAuditReport(audit) {
   lines.push("- Dry-run is the default. Apply requires --apply.");
   lines.push("- Legacy directories are copied and untracked only; they are not deleted.");
   lines.push("- Ignore rules are written to .git/info/exclude, not .gitignore.");
-  lines.push("- Cache paths under ~/.codex/plugins/cache are skipped.");
+  lines.push("- Cache paths under ~/.codex/plugins/cache and ~/.claude/plugins/cache are skipped.");
   lines.push("");
   return `${lines.join("\n")}\n`;
 }
@@ -739,7 +755,7 @@ function isLegacyRel(rel) {
 
 function isCachePath(filePath) {
   const normalized = slash(absPath(filePath));
-  return normalized.includes("/.codex/plugins/cache/") || normalized.endsWith("/.codex/plugins/cache");
+  return CACHE_ROOT_SUFFIXES.some((cache) => normalized.includes(`${cache}/`) || normalized.endsWith(cache));
 }
 
 function requireValue(argv, index, flag) {
