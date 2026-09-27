@@ -2,7 +2,7 @@
   "name": "cli-agent-runner",
   "version": "0.4.1",
   "private": true,
-  "description": "Scoped CLI worker runner with caller-defined roles and a built-in browser-pane Live Console.",
+  "description": "Scoped CLI worker runner with caller-defined roles and a built-in loopback Live Console for the host browser.",
   "type": "module",
   "license": "MIT",
   "author": "Makoto Suzuki",
@@ -32,6 +32,8 @@
     "check": "npm test",
     "test:cli": "node --test tests/metacognitive-gate.test.mjs tests/workflow-state.test.mjs",
     "test:live": "node --test tests/live-console.test.mjs tests/live-runner.test.mjs",
-    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd ."
+    "doctor:self": "node bin/cli-agent-runner.mjs doctor --target-cwd .",
+    "plugin:install:check": "node scripts/install-plugin.mjs --check",
+    "plugin:install": "node scripts/install-plugin.mjs --install"
   }
 }

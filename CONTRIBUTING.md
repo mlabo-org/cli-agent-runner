@@ -7,9 +7,9 @@ CLI Agent Runnerへの改善を歓迎します。一つの変更は一つの目�
 ## Before changing source / ソース変更前
 
 - Use Node.js 22 or later.
-- Read the repository-root `CLAUDE.md`. Its refresh route activates only for an explicit install or refresh request; ordinary development must not mutate a marketplace or installed cache.
+- Read the repository-root `AGENTS.md`. It is the only rule set (`CLAUDE.md` points to it). Its installation route activates only for an explicit install request; ordinary development must not mutate a marketplace or installed cache.
 - Check `git status` and preserve unrelated work.
-- Treat this repository as source of truth. Never edit `~/.claude/plugins/cache/` as source.
+- Treat this repository as source of truth. Never edit `~/.codex/plugins/cache/` or `~/.claude/plugins/cache/` as source.
 
 ## Implementation boundaries / 実装境界
 
@@ -26,7 +26,13 @@ Run the repository acceptance command once:
 npm run check
 ```
 
-Do not run `claude-plugin-refresh`, refresh a plugin cache, or restart Claude Code as part of development unless the current user explicitly authorized that operation.
+For installer changes, also run the read-only local preflight from the canonical checkout:
+
+```sh
+npm run plugin:install:check
+```
+
+Do not run `npm run plugin:install` or `claude-plugin-refresh`, refresh a plugin cache, or restart Codex or Claude Code as part of development unless the current user explicitly authorized that operation.
 
 ## Pull requests / Pull Request
 

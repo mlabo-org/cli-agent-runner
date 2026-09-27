@@ -4,7 +4,7 @@
 
 Run Codex, Claude, Grok, or a custom CLI as a scoped worker—with a default-on Live Console and an optional runner-owned delegation layer.
 
-Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し、既定ONのLive Consoleと、必要時だけ使うrunner所有のローカル再委託を提供するClaude Codeプラグインです。
+Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し、既定ONのLive Consoleと、必要時だけ使うrunner所有のローカル再委託を提供する、CodexとClaude Code共通のプラグインです。
 
 ![CLI Agent Runner Live Console showing a brokered Grok run](docs/assets/live-console-brokered-delegation.png)
 
@@ -15,11 +15,23 @@ Codex、Claude、Grok、任意CLIをスコープ付きworkerとして起動し�
 
 <p align="center"><em>One delegated implementation, visible while it runs, followed by the actual browser-game results. / 委託実装を実行中から可視化し、そのまま得られたブラウザゲームの成果例。</em></p>
 
+## Install with Codex / Codexでインストール
+
+This repository is agent-first installable. Give its URL to Codex and paste this request:
+
+> Install CLI Agent Runner from https://github.com/mlabo-org/cli-agent-runner into my local Codex environment. Read the repository-root AGENTS.md first and follow its installation route. Resolve my own home directory, preserve existing marketplace entries, never edit the installed cache directly, and report the installed version plus the required restart and fresh-task verification. Do not require Claude or Grok unless I ask to use those profiles.
+
+このリポジトリは、取得した側のCodexが初見で導入できる構成です。CodexにURLと次の依頼を渡してください。
+
+> https://github.com/mlabo-org/cli-agent-runner から CLI Agent Runner を私のローカルCodex環境へインストールして。最初にリポジトリ直下の AGENTS.md を読み、そこに定義された導入経路に従って。私自身のホームディレクトリを解決し、既存marketplaceエントリを保全し、インストール済みcacheは直接編集せず、導入されたversionと再起動・新規taskでの確認手順まで報告して。ClaudeまたはGrokのprofileを使うよう頼むまでは、それらを導入条件にしないで。
+
+The root `AGENTS.md` (which `CLAUDE.md` points to) activates only for an explicit installation request. The complete mutation and stop-condition contract is in [`docs/INSTALL_FOR_CODEX.md`](docs/INSTALL_FOR_CODEX.md); normal repository work never triggers installation.
+
 ## English
 
 ### What it does
 
-CLI Agent Runner gives a parent Claude Code task one provider-neutral process boundary for CLI workers:
+CLI Agent Runner gives a parent Codex or Claude Code task one provider-neutral process boundary for CLI workers:
 
 - `codex-cli`, `claude-cli`, and `grok-cli` are bundled profiles.
 - JSON configuration can add or override profiles without provider-specific execution code.
@@ -28,7 +40,7 @@ CLI Agent Runner gives a parent Claude Code task one provider-neutral process bo
 - stdout, stderr, structured provider events, normalized results, and brokered child lineage can be observed in the loopback-only Live Console.
 - Repository scope is checked after execution. Out-of-scope changes remain an explicit failure.
 
-The plugin does not replace official Claude Code subagents (the Agent tool). Use it when the user explicitly wants a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
+The plugin does not replace official host subagents (Codex subagents or the Claude Code Agent tool). Use it when the user explicitly wants a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
 
 ### Responsibility model
 
@@ -70,22 +82,42 @@ After a successful in-scope process result, the runner stops. It does not automa
 
 ### Requirements
 
-- macOS with Claude Code.
+- macOS with Codex desktop and a Codex CLI that exposes plugin commands, or with Claude Code.
 - Git.
 - Node.js 22 or later. The runtime uses Node standard libraries and has no package dependencies.
 - An authenticated CLI for each selected runner profile:
 
 | Profile | Command | Required only when selected |
 |---|---|---|
-| `codex-cli` | `codex` | Yes |
+| `codex-cli` | `codex` | Yes; also used for Codex plugin installation |
 | `claude-cli` | `claude` | Yes |
 | `grok-cli` | `grok` | Yes |
 
 Installing the plugin does not install or authenticate provider CLIs.
 
-### Installation
+### Manual installation
 
-The source of truth is `~/.claude/local-plugins/plugins/cli-agent-runner/`, registered in the `suzuki-local-plugins` Claude Code marketplace. After `npm run check` passes, refresh the installed plugin with `claude-plugin-refresh`; it stages only Git-visible files and generates `.claude-plugin/plugin.json`. Never edit `~/.claude/plugins/cache/` directly. Open a new Claude Code session afterward.
+The agent-first route above is preferred. For a manual install, use the canonical personal-plugin path. The commands below clone only when the destination does not exist. An existing destination must be the canonical repository with a matching `origin` and no unresolved changes; otherwise stop without overwriting it.
+
+```sh
+REPO=https://github.com/mlabo-org/cli-agent-runner.git
+DEST="$HOME/plugins/cli-agent-runner"
+if [ -e "$DEST" ]; then
+  test -d "$DEST/.git"
+  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
+  test -z "$(git -C "$DEST" status --porcelain)"
+else
+  git clone "$REPO" "$DEST"
+fi
+cd "$DEST"
+npm run check
+npm run plugin:install:check
+npm run plugin:install
+```
+
+`plugin:install:check` is read-only. `plugin:install` preserves unrelated entries in `~/.agents/plugins/marketplace.json`, installs through `codex plugin add`, and verifies the installed manifest version. Restart Codex afterward and open a fresh task.
+
+For Claude Code, this same checkout is the source registered in the local Claude Code marketplace. After `npm run check` passes, refresh the installed plugin with `claude-plugin-refresh`; it stages only Git-visible files and generates `.claude-plugin/plugin.json`. Open a new Claude Code session afterward.
 
 Fresh-task verification prompt:
 
@@ -172,14 +204,14 @@ Runner configuration precedence is bundled defaults, user config, `CLI_AGENT_RUN
 
 Workflow state lives in the target Git repository's `.cli-agent-runner/` directory. The tool adds that directory to the target repository's local `.git/info/exclude`; it does not silently change the tracked `.gitignore`.
 
-See [`docs/live-console.md`](docs/live-console.md) for the event, token, browser-pane handoff, and parent-child lineage contract.
+See [`docs/live-console.md`](docs/live-console.md) for the event, token, host-browser handoff, and parent-child lineage contract.
 
 ### Security boundaries
 
 - Live Console binds to loopback and requires its generated token. Treat the full tokenized URL as sensitive local telemetry; do not paste it into commits, logs, issues, or remote messages.
 - Runner profiles execute local commands with their configured arguments and inherited environment. Treat third-party runner JSON as executable code, review it before use, and keep custom config outside worker-writable jobsites.
 - Machine scopes are fail-closed post-run Git change checks, not write containment. They do not see ignored or out-of-repository writes and do not replace the selected provider's own permission model or an OS sandbox.
-- Plugin source is authoritative. Never patch `~/.claude/plugins/cache/` directly.
+- Plugin source is authoritative. Never patch `~/.codex/plugins/cache/` or `~/.claude/plugins/cache/` directly.
 
 For vulnerability reports, see [`SECURITY.md`](SECURITY.md).
 
@@ -197,7 +229,7 @@ The complete test suite is the release check. See [`CONTRIBUTING.md`](CONTRIBUTI
 
 ### このプラグインが行うこと
 
-CLI Agent Runnerは、親Claude Code taskからCLI workerを起動するためのprovider非依存な実行境界を提供します。
+CLI Agent Runnerは、親Codex / Claude Code taskからCLI workerを起動するためのprovider非依存な実行境界を提供します。
 
 - `codex-cli`、`claude-cli`、`grok-cli`を標準profileとして同梱します。
 - JSON設定により、provider固有の実行分岐を追加せずprofileを追加・上書きできます。
@@ -206,7 +238,7 @@ CLI Agent Runnerは、親Claude Code taskからCLI workerを起動するため�
 - stdout、stderr、providerのstructured event、正規化結果、broker経由のchild lineageをloopback専用Live Consoleで観測できます。
 - 実行後にrepository scopeを検査し、範囲外変更は明示的な失敗として残します。
 
-このプラグインはClaude Code公式subagent（Agent tool）の代替ではありません。ユーザーがローカルCLI LLM、そのstreaming output、custom runner profile、またはLive Consoleを明示的に求めた場合に使います。
+このプラグインはホスト公式subagent（Codex subagent、Claude CodeのAgent tool）の代替ではありません。ユーザーがローカルCLI LLM、そのstreaming output、custom runner profile、またはLive Consoleを明示的に求めた場合に使います。
 
 ### 責務モデル
 
@@ -229,22 +261,42 @@ scope内でprocess resultが成功した時点でrunnerは終了します。revi
 
 ### 必要環境
 
-- Claude Codeが動くmacOS。
+- Codex desktopとplugin commandを備えたCodex CLI、またはClaude Codeが動くmacOS。
 - Git。
 - Node.js 22以降。runtimeはNode標準libraryのみを使い、package dependencyはありません。
 - 実際に選ぶrunner profileに対応した認証済みCLI。
 
 | Profile | Command | 必要になる時点 |
 |---|---|---|
-| `codex-cli` | `codex` | 選択時のみ |
+| `codex-cli` | `codex` | 選択時。Codexへのplugin導入にも使用 |
 | `claude-cli` | `claude` | 選択時のみ |
 | `grok-cli` | `grok` | 選択時のみ |
 
 pluginの導入はprovider CLIのインストールや認証を行いません。
 
-### インストール
+### 手動インストール
 
-正本は`~/.claude/local-plugins/plugins/cli-agent-runner/`で、Claude Codeの`suzuki-local-plugins` marketplaceに登録されています。`npm run check`が通った後、`claude-plugin-refresh`でインストール済みpluginを更新します。これはGit管理下のファイルだけをstageし、`.claude-plugin/plugin.json`を生成します。`~/.claude/plugins/cache/`は直接編集しないでください。完了後は新しいClaude Codeセッションを開いてください。
+通常は冒頭のagent-first導入を使ってください。手動の場合もpersonal pluginのcanonical pathへ置きます。下記のコマンドはdestinationが存在しない場合だけcloneします。既存destinationはcanonical repositoryで、`origin`が一致し、未解決の変更がない場合だけ継続し、それ以外は上書きせず停止します。
+
+```sh
+REPO=https://github.com/mlabo-org/cli-agent-runner.git
+DEST="$HOME/plugins/cli-agent-runner"
+if [ -e "$DEST" ]; then
+  test -d "$DEST/.git"
+  test "$(git -C "$DEST" remote get-url origin)" = "$REPO"
+  test -z "$(git -C "$DEST" status --porcelain)"
+else
+  git clone "$REPO" "$DEST"
+fi
+cd "$DEST"
+npm run check
+npm run plugin:install:check
+npm run plugin:install
+```
+
+`plugin:install:check`はread-onlyです。`plugin:install`は`~/.agents/plugins/marketplace.json`の無関係なentryを保全し、`codex plugin add`で導入し、manifest versionまで確認します。完了後にCodexを再起動し、新しいtaskを開いてください。
+
+Claude Codeでは、この同じcheckoutをClaude Codeのlocal marketplaceに登録された正本として使います。`npm run check`が通った後、`claude-plugin-refresh`でインストール済みpluginを更新します。これはGit管理下のファイルだけをstageし、`.claude-plugin/plugin.json`を生成します。完了後は新しいClaude Codeセッションを開いてください。
 
 新規taskでの確認prompt:
 
@@ -331,14 +383,14 @@ runner設定の優先順位は、bundled defaults、user config、`CLI_AGENT_RUN
 
 workflow stateは対象Git repositoryの`.cli-agent-runner/`に置かれます。toolは対象repositoryのlocalな`.git/info/exclude`へこのdirectoryを追加し、tracked `.gitignore`を暗黙変更しません。
 
-event、token、browser-pane handoff、parent-child lineageの契約は[`docs/live-console.md`](docs/live-console.md)を参照してください。
+event、token、host browser handoff、parent-child lineageの契約は[`docs/live-console.md`](docs/live-console.md)を参照してください。
 
 ### セキュリティ境界
 
 - Live Consoleはloopbackへbindし、生成tokenを要求します。token付きURL全体をsensitiveなlocal telemetryとして扱い、commit、log、issue、remote messageへ貼らないでください。
 - runner profileは設定されたargumentと継承environmentでlocal commandを実行します。third-party runner JSONは実行可能codeとして使用前に確認し、custom configはworkerが書き込めるjobsite外へ置いてください。
 - machine scopeはfail-closedな実行後Git変更検査であり、write containmentではありません。ignored pathやrepository外への書き込みは検出せず、選択provider自身のpermission modelやOS sandboxを置き換えません。
-- plugin sourceが正本です。`~/.claude/plugins/cache/`を直接patchしないでください。
+- plugin sourceが正本です。`~/.codex/plugins/cache/`と`~/.claude/plugins/cache/`を直接patchしないでください。
 
 脆弱性報告は[`SECURITY.md`](SECURITY.md)を参照してください。
 
