@@ -1234,6 +1234,55 @@ test("completed codex-cli runner result is terminal without follow-up collection
   }
 });
 
+test("clean runner exit with a worker-reported blocker is not a completed result", () => {
+  const repo = makeTempGitRepo();
+  const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
+  try {
+    intake(repo, {
+      task: "Probe blocked worker result",
+      taskId: "blocked-runner",
+      epoch: "e1",
+      scope: "README.md",
+      workType: "documentation",
+    });
+    installFakeCodex(fakeBin, "- findings: stopped early\\n- blockers: README.md is locked by another job\\n- next: unlock README.md\\n");
+
+    const run = runCli([
+      "run",
+      "--target-cwd",
+      repo,
+      "--role",
+      "Implementer",
+      "--task-id",
+      "blocked-runner",
+      "--epoch",
+      "e1",
+      "--scope",
+      "README.md",
+      "--work-type",
+      "documentation",
+      "--assignment",
+      "complete the documentation task",
+      "--expected-output",
+      "parent integration material",
+      "--runner",
+      "codex-cli",
+    ], {
+      env: pathWithFakeCodex(fakeBin),
+    });
+
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /worker reported blocker: README\.md is locked by another job/);
+    const runner = readState(repo, "runner.md");
+    const processResult = runner.slice(runner.lastIndexOf("- type: process-runner-result"));
+    assert.match(processResult, /status: failed/);
+    assert.match(processResult, /exit_code: 0/);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(fakeBin, { recursive: true, force: true });
+  }
+});
+
 test("terminal runner prompt makes exact expected_output authoritative without finalization requirements", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));

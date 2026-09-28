@@ -1080,9 +1080,13 @@ function normalizeRunnerResult(packet, context) {
     stderr: result.stderr,
     errorMessage: result.error?.message,
   });
-  const baseStatus = !result.error && exitCode === 0 ? "completed" : "failed";
+  const processSucceeded = !result.error && exitCode === 0;
+  const reportedBlocker = processSucceeded ? workerReportedBlocker(summarySource) : null;
+  const baseStatus = processSucceeded && !reportedBlocker ? "completed" : "failed";
   const metacognitiveFields = extractMetacognitiveFields(summarySource);
-  const failure = runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand });
+  const failure = reportedBlocker
+    ? `worker reported blocker: ${singleLine(reportedBlocker)}`
+    : runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand });
 
   return {
     type: "process-runner-result",
@@ -1154,6 +1158,13 @@ function selectRunnerSummarySource({ runnerResultSource, outputFile, stdout, std
   if (runnerResultSource === "output-file") return outputFile || stdout || stderr || errorMessage || "";
   if (runnerResultSource === "stderr") return stderr || stdout || outputFile || errorMessage || "";
   return stdout || stderr || outputFile || errorMessage || "";
+}
+
+// A clean process exit is not task completion when the worker itself
+// reports that it stopped on a blocker.
+function workerReportedBlocker(text) {
+  const blockers = getFieldValue(text, "blockers");
+  return blockers && !isMetacognitiveNoEvidenceValue(blockers) ? blockers : null;
 }
 
 function runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand }) {
