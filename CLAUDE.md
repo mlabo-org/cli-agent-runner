@@ -1,3 +1,5 @@
 # CLAUDE.md
 
-The rules for this repository live in `AGENTS.md`. Read and follow it; this file adds nothing.
+The rules for this repository live in `AGENTS.md`. It is imported below; this file adds nothing.
+
+@AGENTS.md
