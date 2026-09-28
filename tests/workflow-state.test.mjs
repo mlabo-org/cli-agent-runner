@@ -1331,6 +1331,60 @@ test("clean runner exit with a blocker in an expected_output JSON result is not 
   }
 });
 
+test("clean runner exit with a blocker in an expected_output JSON result after prose is not completed", () => {
+  const messages = [
+    'Checked the repository. Result:\\n\\n```json\\n{\\"status\\":\\"blocked\\",\\"blockers\\":\\"README.md is locked by another job\\"}\\n```\\n',
+    'Here is the result:\\n{\\"status\\":\\"blocked\\",\\"blockers\\":\\"README.md is locked by another job\\"}\\n',
+  ];
+  for (const message of messages) {
+    const repo = makeTempGitRepo();
+    const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
+    try {
+      intake(repo, {
+        task: "Probe blocked JSON worker result after prose",
+        taskId: "blocked-prose-json-runner",
+        epoch: "e1",
+        scope: "README.md",
+        workType: "documentation",
+      });
+      installFakeCodex(fakeBin, message);
+
+      const run = runCli([
+        "run",
+        "--target-cwd",
+        repo,
+        "--role",
+        "Implementer",
+        "--task-id",
+        "blocked-prose-json-runner",
+        "--epoch",
+        "e1",
+        "--scope",
+        "README.md",
+        "--work-type",
+        "documentation",
+        "--assignment",
+        "complete the documentation task",
+        "--expected-output",
+        'exact JSON {"status": string, "blockers": string}',
+        "--runner",
+        "codex-cli",
+      ], {
+        env: pathWithFakeCodex(fakeBin),
+      });
+
+      assert.notEqual(run.status, 0);
+      assert.match(run.stderr, /worker reported blocker: README\.md is locked by another job/);
+      const runner = readState(repo, "runner.md");
+      const processResult = runner.slice(runner.lastIndexOf("- type: process-runner-result"));
+      assert.match(processResult, /status: failed/);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+    }
+  }
+});
+
 test("terminal runner prompt makes exact expected_output authoritative without finalization requirements", () => {
   const repo = makeTempGitRepo();
   const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-fake-codex-"));
