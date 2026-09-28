@@ -1,0 +1,16 @@
+{
+  "name": "cli-agent-runner",
+  "description": "Claude Code marketplace for CLI Agent Runner.",
+  "owner": {
+    "name": "Makoto Suzuki"
+  },
+  "plugins": [
+    {
+      "name": "cli-agent-runner",
+      "source": "./",
+      "description": "Run Codex, Claude, Grok, or custom CLI workers with a machine-checked write scope and a default-on local Live Console.",
+      "homepage": "https://github.com/mlabo-org/cli-agent-runner#readme",
+      "license": "MIT"
+    }
+  ]
+}
