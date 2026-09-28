@@ -1162,7 +1162,9 @@ function selectRunnerSummarySource({ runnerResultSource, outputFile, stdout, std
 
 // A clean process exit is not task completion when the worker itself
 // reports that it stopped on a blocker, whether it answered in the fallback
-// Markdown sections or in a JSON shape requested by expected_output.
+// Markdown sections or in a JSON shape requested by expected_output. CLI
+// workers often put prose before that JSON, so the result object may follow
+// a preamble, bare or fenced.
 function workerReportedBlocker(text) {
   const json = parseWorkerJsonResult(text);
   if (json) return jsonReportedBlocker(json);
@@ -1170,15 +1172,23 @@ function workerReportedBlocker(text) {
   return blockers && !isMetacognitiveNoEvidenceValue(blockers) ? blockers : null;
 }
 
+// Only an object carrying status or blockers is a result; other JSON, such as
+// a config snippet inside a Markdown answer, leaves the Markdown fields in charge.
 function parseWorkerJsonResult(text) {
   const trimmed = String(text || "").trim();
-  const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
-  try {
-    const value = JSON.parse(fenced ? fenced[1] : trimmed);
-    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
+  const fenced = [...trimmed.matchAll(/```(?:json)?[ \t]*\n([\s\S]*?)\n```/gi)].map((match) => match[1]);
+  const trailing = [...trimmed.matchAll(/(?:^|\n)(?=\{)/g)].map((match) => trimmed.slice(match.index).trim());
+  for (const candidate of [trimmed, ...fenced.reverse(), ...trailing]) {
+    try {
+      const value = JSON.parse(candidate);
+      if (value && typeof value === "object" && !Array.isArray(value) && ("status" in value || "blockers" in value)) {
+        return value;
+      }
+    } catch {
+      // Not JSON; try the next candidate.
+    }
   }
+  return null;
 }
 
 function jsonReportedBlocker(result) {
