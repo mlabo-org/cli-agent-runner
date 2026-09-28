@@ -1161,10 +1161,32 @@ function selectRunnerSummarySource({ runnerResultSource, outputFile, stdout, std
 }
 
 // A clean process exit is not task completion when the worker itself
-// reports that it stopped on a blocker.
+// reports that it stopped on a blocker, whether it answered in the fallback
+// Markdown sections or in a JSON shape requested by expected_output.
 function workerReportedBlocker(text) {
+  const json = parseWorkerJsonResult(text);
+  if (json) return jsonReportedBlocker(json);
   const blockers = getFieldValue(text, "blockers");
   return blockers && !isMetacognitiveNoEvidenceValue(blockers) ? blockers : null;
+}
+
+function parseWorkerJsonResult(text) {
+  const trimmed = String(text || "").trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*\n([\s\S]*?)\n```$/i);
+  try {
+    const value = JSON.parse(fenced ? fenced[1] : trimmed);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function jsonReportedBlocker(result) {
+  const listed = Array.isArray(result.blockers) ? result.blockers.map(String).join("; ") : result.blockers;
+  const blockers = typeof listed === "string" && !isMetacognitiveNoEvidenceValue(listed) ? listed : null;
+  const status = typeof result.status === "string" ? result.status.trim().toLowerCase() : "";
+  if (blockers) return blockers;
+  return isBlockedOrUnresolvedStatus(status) || status === "failed" ? `status ${status}` : null;
 }
 
 function runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand }) {
