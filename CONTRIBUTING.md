@@ -15,6 +15,7 @@ CLI Agent Runnerへの改善を歓迎します。一つの変更は一つの目�
 
 - Add runner behavior through the shared registry, process runner, stream adapter, or broker contract rather than a provider-ID branch.
 - Keep a worker's descendant authority inside its inherited scope and finite hierarchy ceiling.
+- Publish the Claude Code plugin through `.claude-plugin/marketplace.json` only. Do not add `.claude-plugin/plugin.json`: Claude Code installs the plugin without it, and local marketplace tooling that generates its own manifest refuses a source that already ships one.
 - Do not commit `.cli-agent-runner/` workflow state, Live Console tokens, local runner secrets, caches, or logs.
 - Update both English and Japanese README sections when public behavior or installation changes.
 
@@ -32,7 +33,7 @@ For installer changes, also run the read-only local preflight from the canonical
 npm run plugin:install:check
 ```
 
-Do not run `npm run plugin:install` or `claude-plugin-refresh`, refresh a plugin cache, or restart Codex or Claude Code as part of development unless the current user explicitly authorized that operation.
+Do not run `npm run plugin:install` or a `claude plugin` install, update, or marketplace command, refresh a plugin cache, or restart Codex or Claude Code as part of development unless the current user explicitly authorized that operation.
 
 ## Pull requests / Pull Request
 
