@@ -39,9 +39,17 @@
     "role": { "type": "string", "minLength": 1, "pattern": "^[^\\r\\n]+$" },
     "assignment": { "type": "string", "minLength": 1 },
     "expectedOutput": { "type": "string", "minLength": 1 },
-    "runner": { "type": "string", "pattern": "^[a-z0-9._-]+$" },
+    "runner": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "runnerConfigPath": { "type": "string", "minLength": 1 },
     "delegationMode": { "enum": ["leaf", "local_orchestrator"] },
+    "hierarchyMode": { "enum": ["none", "one_level", "n_level"] },
+    "maxDepth": { "type": "integer", "minimum": 0 },
+    "depth": { "type": "integer", "minimum": 0 },
+    "remainingDepth": { "type": "integer", "minimum": 0 },
+    "hierarchyOverrideReason": {
+      "enum": ["user_request", "safety_boundary", "scope_boundary", "capability_boundary"],
+      "description": "Required when explicit hierarchy fields replace the selected runner profile's defaultHierarchyDepth."
+    },
     "featureProfile": { "type": "string", "minLength": 1 },
     "timeoutMs": { "type": "integer", "minimum": 1 },
     "liveConsoleMode": {

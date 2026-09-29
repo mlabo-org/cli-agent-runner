@@ -115,13 +115,23 @@ test("Live Console bounds run and event history and rejects invalid or out-of-or
     console.publish(event("run-a", 3));
     assert.deepEqual(console.snapshot().runs[0].events.map((item) => item.sequence), [2, 3]);
     console.publish(event("run-b", 1));
-    console.publish(event("run-c", 1, { data: { status: "completed" } }));
+    console.publish(event("run-c", 1, { type: "run.completed", data: { status: "completed" } }));
 
     const snapshot = console.snapshot();
     assert.deepEqual(snapshot.runs.map((run) => run.runId), ["run-b", "run-c"]);
     assert.equal(snapshot.runs.at(-1).status, "completed");
 
-    assert.throws(() => console.publish(event("run-c", 1)), /must increase/);
+    // A finished run is evicted before an older run that is still running.
+    console.publish(event("run-d", 1));
+    assert.deepEqual(console.snapshot().runs.map((run) => run.runId), ["run-b", "run-d"]);
+
+    // Provider events cannot rewrite a run's status or lineage.
+    console.publish(event("run-d", 2, { type: "runner.message", data: { status: "error", parentRunId: "spoofed" } }));
+    const runD = console.snapshot().runs.find((run) => run.runId === "run-d");
+    assert.equal(runD.status, "running");
+    assert.equal(runD.parentRunId, null);
+
+    assert.throws(() => console.publish(event("run-d", 2)), /must increase/);
     const invalid = await fetch(`${console.ingestUrl}?token=${console.token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
