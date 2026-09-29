@@ -1,19 +1,21 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { resolveLiveConsoleIngestUrl } from "../lib/live-console-client.mjs";
+import { createLiveConsolePublisher, resolveLiveConsoleIngestUrl } from "../lib/live-console-client.mjs";
 import { startLiveConsole } from "../lib/live-console.mjs";
 import { runStreamingProcess } from "../lib/process-runner.mjs";
 import { createRunnerStreamAdapter } from "../lib/runner-stream.mjs";
 import {
   cleanupOrchestrationWorkspace,
+  collectWorkspaceChanges,
   createOrchestrationWorkspace,
   integrateOrchestrationChanges,
+  snapshotPrefixes,
 } from "../lib/orchestration-workspace.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,6 +36,46 @@ test("messages-json adapter exposes structured activity and reconstructs the ass
   assert.equal(adapter.resultText(), "visible progress");
   assert.deepEqual(events.map((event) => event.type), ["runner.message", "runner.message", "runner.message"]);
   assert.equal(events.at(-1).text, "progress");
+});
+
+// Shape captured from grok 1.0.31 --output-format streaming-messages-json
+// --include-partial-messages: deltas wrapped in stream_event, then the whole
+// assistant message, then a result line carrying the final answer.
+function grokLines(turns, finalResult, isError = false) {
+  const lines = [{ type: "system", subtype: "init" }];
+  for (const text of turns) {
+    lines.push({ type: "stream_event", event: { type: "message_start", message: { content: [] } } });
+    lines.push({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } } });
+    lines.push({ type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "text_delta", text } } });
+    lines.push({ type: "assistant", message: { content: [{ type: "thinking", thinking: "hmm" }, { type: "text", text }] } });
+  }
+  if (finalResult !== undefined) lines.push({ type: "result", subtype: isError ? "error" : "success", is_error: isError, result: finalResult });
+  return lines.map((line) => `${JSON.stringify(line)}\n`).join("");
+}
+
+test("messages-json adapter reads Grok's wrapped deltas and final result line", () => {
+  const events = [];
+  const adapter = createRunnerStreamAdapter({ format: "messages-json", onEvent: (event) => events.push(event) });
+  adapter.write("stdout", Buffer.from(grokLines(["Let me read the file.", "Final answer"], "Final answer")));
+  adapter.end("stdout");
+  adapter.end("stderr");
+  assert.equal(adapter.resultText(), "Final answer");
+  assert.equal(adapter.reportedError(), null);
+  assert.ok(events.some((event) => event.text === "Let me read the file."), "wrapped text deltas are visible");
+});
+
+test("messages-json adapter uses only the last assistant turn without a result line", () => {
+  const adapter = createRunnerStreamAdapter({ format: "messages-json" });
+  adapter.write("stdout", Buffer.from(grokLines(["Let me read the file.", "Final answer"])));
+  adapter.end("stdout");
+  assert.equal(adapter.resultText(), "Final answer");
+});
+
+test("messages-json adapter reports a provider error result", () => {
+  const adapter = createRunnerStreamAdapter({ format: "messages-json" });
+  adapter.write("stdout", Buffer.from(grokLines(["Working"], "API quota exhausted", true)));
+  adapter.end("stdout");
+  assert.equal(adapter.reportedError(), "API quota exhausted");
 });
 
 test("streaming process delivers chunks before close and preserves timeout failure", async () => {
@@ -263,52 +305,53 @@ test("orchestrate rejects a worker write outside its ownerScope", async () => {
   }
 });
 
-test("orchestration workspace integrates validated changes and cleans up after failed bundles", () => {
+test("orchestration workspace integrates in-scope writes and deletes, then cleans up", () => {
   const repo = makeTempGitRepo();
-  writeFileSync(path.join(repo, "baseline.txt"), "before\n", "utf8");
-  const workspace = createOrchestrationWorkspace(repo);
+  mkdirSync(path.join(repo, "a"));
+  writeFileSync(path.join(repo, "a", "old.txt"), "old\n", "utf8");
+  const targetBaseline = snapshotPrefixes(repo, ["a"]);
+  const workspace = createOrchestrationWorkspace({ gitRoot: repo, targetPrefix: "" });
   try {
-    writeFileSync(path.join(workspace.root, "alpha.txt"), "alpha\n", "utf8");
-    const changes = new Map([["alpha.txt", { type: "file", value: Buffer.from("alpha\n"), mode: 0o644 }]]);
-    integrateOrchestrationChanges(repo, workspace.baseline, [changes]);
-    assert.equal(readFileSync(path.join(repo, "alpha.txt"), "utf8"), "alpha\n");
-
-    const failedWorkspace = createOrchestrationWorkspace(repo);
-    try {
-      writeFileSync(path.join(failedWorkspace.root, "beta.txt"), "must-not-apply\n", "utf8");
-      assert.throws(
-        () => integrateOrchestrationChanges(repo, failedWorkspace.baseline, [new Map([["beta.txt", { type: "file", value: Buffer.from("must-not-apply\n"), mode: 0o644 }]]), new Map([["beta.txt", { type: "file", value: Buffer.from("conflict\n"), mode: 0o644 }]])]),
-        /orchestration bundle conflict/,
-      );
-      assert.equal(existsSync(path.join(repo, "beta.txt")), false);
-    } finally {
-      const root = failedWorkspace.root;
-      cleanupOrchestrationWorkspace(failedWorkspace);
-      assert.equal(existsSync(root), false);
-    }
-  } finally {
-    cleanupOrchestrationWorkspace(workspace);
-    rmSync(repo, { recursive: true, force: true });
-  }
-});
-
-test("orchestration integration fails closed when target changes during worker execution", () => {
-  const repo = makeTempGitRepo();
-  writeFileSync(path.join(repo, "shared.txt"), "before\n", "utf8");
-  const workspace = createOrchestrationWorkspace(repo);
-  try {
-    writeFileSync(path.join(workspace.root, "alpha.txt"), "alpha\n", "utf8");
-    writeFileSync(path.join(repo, "shared.txt"), "external\n", "utf8");
-    assert.throws(
-      () => integrateOrchestrationChanges(repo, workspace.baseline, [new Map([["alpha.txt", { type: "file", value: Buffer.from("alpha\n"), mode: 0o644 }]])]),
-      /target changed while orchestrating: shared\.txt/,
-    );
-    assert.equal(existsSync(path.join(repo, "alpha.txt")), false);
-    assert.equal(readFileSync(path.join(repo, "shared.txt"), "utf8"), "external\n");
+    const baseline = snapshotPrefixes(workspace.root, ["a"]);
+    writeFileSync(path.join(workspace.root, "a", "alpha.txt"), "alpha\n", "utf8");
+    rmSync(path.join(workspace.root, "a", "old.txt"));
+    writeFileSync(path.join(workspace.root, "outside.txt"), "ignored by scope\n", "utf8");
+    const changes = collectWorkspaceChanges(workspace, baseline, ["a"]);
+    assert.deepEqual([...changes].sort(), [["a/alpha.txt", "write"], ["a/old.txt", "delete"]]);
+    integrateOrchestrationChanges({ gitRoot: repo, workspace, changes, targetBaseline });
+    assert.equal(readFileSync(path.join(repo, "a", "alpha.txt"), "utf8"), "alpha\n");
+    assert.equal(existsSync(path.join(repo, "a", "old.txt")), false);
+    assert.equal(existsSync(path.join(repo, "outside.txt")), false);
   } finally {
     const root = workspace.root;
     cleanupOrchestrationWorkspace(workspace);
     assert.equal(existsSync(root), false);
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("orchestration integration refuses a path that changed in the target, ignoring unrelated changes", () => {
+  const repo = makeTempGitRepo();
+  mkdirSync(path.join(repo, "a"));
+  writeFileSync(path.join(repo, "a", "shared.txt"), "before\n", "utf8");
+  writeFileSync(path.join(repo, "unrelated.txt"), "before\n", "utf8");
+  const targetBaseline = snapshotPrefixes(repo, ["a"]);
+  const workspace = createOrchestrationWorkspace({ gitRoot: repo, targetPrefix: "" });
+  try {
+    const baseline = snapshotPrefixes(workspace.root, ["a"]);
+    writeFileSync(path.join(workspace.root, "a", "alpha.txt"), "alpha\n", "utf8");
+    writeFileSync(path.join(workspace.root, "a", "shared.txt"), "worker\n", "utf8");
+    writeFileSync(path.join(repo, "unrelated.txt"), "external\n", "utf8");
+    writeFileSync(path.join(repo, "a", "shared.txt"), "external\n", "utf8");
+    const changes = collectWorkspaceChanges(workspace, baseline, ["a"]);
+    assert.throws(
+      () => integrateOrchestrationChanges({ gitRoot: repo, workspace, changes, targetBaseline }),
+      /target changed while orchestrating: a\/shared\.txt/,
+    );
+    assert.equal(existsSync(path.join(repo, "a", "alpha.txt")), false);
+    assert.equal(readFileSync(path.join(repo, "a", "shared.txt"), "utf8"), "external\n");
+  } finally {
+    cleanupOrchestrationWorkspace(workspace);
     rmSync(repo, { recursive: true, force: true });
   }
 });
@@ -486,6 +529,22 @@ test("run owns Live Console by default and only explicit OFF flags disable it", 
   } finally {
     if (execution?.child.exitCode === null) execution.child.kill("SIGINT");
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("Live Console publisher bounds an oversized provider event so the transport keeps working", async () => {
+  const liveConsole = await startLiveConsole({ viewerRoot: path.join(REPO_ROOT, "viewer") });
+  try {
+    const publisher = createLiveConsolePublisher({ url: liveConsole.viewerUrl, runId: "large-run" });
+    await publisher.publish({ type: "runner.message", text: "x".repeat(400 * 1024), data: { content: "y".repeat(400 * 1024) } });
+    await publisher.publish({ type: "run.completed", text: "done", data: { status: "completed" } });
+    await publisher.drain();
+    const run = liveConsole.snapshot().runs[0];
+    assert.equal(run.status, "completed");
+    assert.match(run.events[0].text, /characters truncated for Live Console/);
+    assert.equal(run.events[0].data.truncated, true);
+  } finally {
+    await liveConsole.close();
   }
 });
 

@@ -6,7 +6,7 @@ Live Console is default-on. Omission is not an OFF signal; only an explicit sile
 
 ## Responsibility boundaries
 
-- The process runner owns child launch, stdin, timeout, output limits, exit state, and raw stdout/stderr capture.
+- The process runner owns child launch as its own process group, stdin, timeout and interruption of the whole group, stopping processes the worker leaves behind, exit state, and raw stdout/stderr capture (the last 8 MiB of each stream, with a visible truncation marker).
 - The stream adapter owns `text`, `ndjson`, and `messages-json` decoding plus provider-neutral event production.
 - The Live Console server owns token authentication, bounded in-memory run state, snapshot/SSE delivery, and viewer assets.
 - The viewer owns presentation only. It does not launch, mutate, accept, or repair worker output.
@@ -53,16 +53,16 @@ The primary event types are `run.started`, `runner.output`, `runner.message`, `r
 
 `data` may also hold the structured provider event but is otherwise opaque to the transport. Sequence numbers increase within one run. A local orchestrator and all of its brokered descendants reuse the same Live Console server; descendant creation never starts a second viewer.
 
-The server binds `127.0.0.1`, generates a random token for each start, and requires that token for ingest, snapshot, and SSE. State is ephemeral and bounded; it is not a replacement for `.cli-agent-runner/runner.md`.
+The server binds `127.0.0.1`, generates a random token for each start, and requires that token for ingest, snapshot, and SSE. An external `--live-console-url` must use `127.0.0.1` or `localhost`. State is ephemeral and bounded; it is not a replacement for `.cli-agent-runner/runner.md`. When the run limit is reached, finished runs are evicted before running ones, so a long-running parent keeps its lineage. Only the runner's own `run.*` and `delegation.*` events set a run's status and lineage; provider events cannot. The publisher shortens any event larger than 192 KiB (long text is cut with a marker, oversized `data` becomes a `{ truncated, originalBytes, preview }` object) so one large provider line never breaks the transport.
 
 ## Runner stream formats
 
 - `text`: emit stdout/stderr chunks as `runner.output` while preserving raw output for result selection.
 - `ndjson`: decode stdout one JSON object per line and emit `runner.message`; non-JSON lines remain visible as raw output.
-- `messages-json`: decode Anthropic Messages wire events, emit their structured envelopes, and reconstruct assistant text from text deltas for the existing stdout result contract.
+- `messages-json`: decode Anthropic Messages wire events, bare or wrapped as `{"type":"stream_event","event":{...}}`, and emit their structured envelopes. The result is the provider's `result` line when present, otherwise the text of the last assistant message only; a `result` line with `is_error: true` records the run as failed.
 
 The default Grok profile declares `messages-json` and launches Grok with `--output-format streaming-messages-json --include-partial-messages`. The executor does not branch on a runner ID; custom profiles select the same behavior through their `stream` field.
 
 ## Failure boundary
 
-An invalid or non-loopback external Live Console URL, or a conflicting ON/OFF selection, is rejected before child launch. Owned-server setup also completes before assignment state is appended or the worker launches. If the console becomes unavailable during a run, the child result is still recorded with its own execution status, while `live_console_status: failed` is reported separately and the CLI exits unsuccessfully after the retained observation session is stopped. Viewer telemetry never decides artifact acceptance.
+An invalid or non-loopback external Live Console URL, or a conflicting ON/OFF selection, is rejected before child launch. Owned-server setup also completes before assignment state is appended or the worker launches. If the console becomes unavailable during a run, the child result is still recorded with its own execution status, while `live_console_status: failed` is reported separately and the CLI exits unsuccessfully after the retained observation session is stopped. Viewer telemetry never decides artifact acceptance: a completed `orchestrate` job's changes are written back even when its console stream failed.

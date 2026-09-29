@@ -52,6 +52,8 @@ CLI Agent Runner gives a parent Codex or Claude Code task a single, provider-neu
 - The loopback-only Live Console shows stdout, stderr, structured provider events, normalized results, and the lineage of brokered child helpers.
 - Scope is checked on both sides of a run. The runner refuses to launch while files outside the scope have uncommitted changes, and any out-of-scope change left after the run is reported as an explicit failure.
 - A worker that exits with code 0 but reports a blocker in its result is recorded as failed, not completed.
+- Each worker runs as its own process group. The process timeout (`--timeout-ms` or the profile's `timeoutMs`; 2 minutes when neither is set, so raise it for real agent work) stops the worker together with everything it started, and anything it leaves running is stopped when it exits. Ctrl-C stops every worker and records the interruption.
+- In `orchestrate`, each job works in a private copy of the repository. Only its changes inside its own `ownerScope` are written back, a job that edits outside it fails, and a file you change in the real repository during the run is never overwritten.
 
 This plugin does not replace the host's official subagents (Codex subagents or the Claude Code Agent tool). Use it when you explicitly want a local CLI LLM, its streaming output, a custom runner profile, or the bundled Live Console.
 
@@ -176,10 +178,13 @@ node bin/cli-agent-runner.mjs run \
   --scope "scope:v1 paths=src/,tests/" \
   --assignment "Implement the scoped change" \
   --expected-output "Changed files and verification" \
-  --runner codex-cli
+  --runner codex-cli \
+  --timeout-ms 1800000
 ```
 
 `--scope` takes either `scope:v1 all` for the whole repository or `scope:v1 paths=<comma-separated repo-relative prefixes>`. Commit or remove changes outside the scope before launching, or include those paths in the scope.
+
+`--timeout-ms` is the process time limit. Without it (or a profile `timeoutMs`), a worker is stopped after 2 minutes, which suits only a quick check; the examples allow 30 minutes. Size it to the assignment.
 
 Direct `run` and `orchestrate` commands start a token-protected loopback Live Console by default and keep the finished page open until you press Ctrl-C. Use `--no-live-console` or `--silent` only when you explicitly want to run without a console.
 
@@ -197,7 +202,8 @@ node bin/cli-agent-runner.mjs run \
   --delegation-mode local_orchestrator \
   --assignment "Own this coherent implementation and delegate only bounded internal helpers" \
   --expected-output "One integrated implementation result" \
-  --runner claude-cli
+  --runner claude-cli \
+  --timeout-ms 1800000
 ```
 
 As with every run, record the task with `intake` first. When the selected profile declares no default hierarchy depth, explicit local-orchestrator mode grants one level of direct children. The bundled `grok-cli` profile already allows one level by default; `codex-cli` and `claude-cli` allow none unless you pass this mode. The worker-only `delegate` command is injected into that worker; calling it from an ordinary parent shell fails closed.
@@ -237,7 +243,8 @@ node bin/cli-agent-runner.mjs orchestrate \
   --epoch e1 \
   --scope "scope:v1 paths=README.md,tests/" \
   --runner grok-cli \
-  --jobs-file /path/to/jobs.json
+  --jobs-file /path/to/jobs.json \
+  --timeout-ms 1800000
 ```
 
 Every `ownerScope` must lie inside the top-level scope and must not overlap any other job running at the same time. All jobs share one Live Console, each with its own run ID.
@@ -254,7 +261,7 @@ See [`docs/live-console.md`](docs/live-console.md) for the event format, token, 
 
 - The Live Console binds to loopback and requires its generated token. Treat the full tokenized URL as sensitive local telemetry; do not paste it into commits, logs, issues, or remote messages.
 - Runner profiles execute local commands with their configured arguments and the inherited environment. Treat third-party runner JSON as executable code, review it before use, and keep custom config outside any jobsite a worker can write to.
-- Machine scopes are fail-closed Git change checks made before launch and after the run; they do not contain writes. They cannot see writes to ignored paths or outside the repository, and they do not replace the selected provider's own permission model or an OS sandbox.
+- Machine scopes are fail-closed Git change checks made before launch and after the run; they do not contain writes. In `run`, they cannot see writes to ignored paths or outside the repository. In `orchestrate`, Git-ignored changes outside a job's `ownerScope` are dropped rather than written back. Neither replaces the selected provider's own permission model or an OS sandbox.
 - The plugin source is authoritative. Never patch `~/.codex/plugins/cache/` or `~/.claude/plugins/cache/` directly.
 
 To report a vulnerability, see [`SECURITY.md`](SECURITY.md).
@@ -282,6 +289,8 @@ CLI Agent Runner は、親の Codex や Claude Code のタスクから CLI の w
 - 標準出力・標準エラー出力、提供元が出す構造化されたイベント、整えた結果、broker 経由で起動した子の補助作業の親子関係を、自分のマシンの中からだけ開けるライブコンソールで確認できます。
 - 書き込み範囲は、実行の前と後の両方で確かめます。範囲の外にコミットしていない変更があると起動を断り、実行後に範囲の外が変わっていれば、はっきり失敗として記録します。
 - worker が終了コード 0 で終わっても、結果の中で作業を止める問題（blocker）を報告していれば、完了ではなく失敗として記録します。
+- worker はそれぞれ独立したプロセスグループとして動きます。打ち切り時間（`--timeout-ms` かプロファイルの `timeoutMs`。どちらもなければ 2 分なので、実際の作業では長めに指定してください）が来ると、worker が起動したものごと止めます。worker が終わったときに残っているプロセスも止めます。Ctrl-C を押すと、すべての worker を止めて、中断したことを記録します。
+- `orchestrate` では、各作業がリポジトリの複製の中で動きます。本物のリポジトリに書き戻すのは、その作業の `ownerScope` の中の変更だけです。範囲の外を書き換えた作業は失敗になり、実行中に本物のリポジトリで変更したファイルが上書きされることはありません。
 
 このプラグインは、ホストに標準で備わっているサブエージェント（Codex のサブエージェントや、Claude Code の Agent ツール）の代わりではありません。ローカルの CLI 版の LLM を使いたいとき、その出力を流しながら見たいとき、独自のプロファイルを使いたいとき、同梱のライブコンソールを使いたいときに、はっきり指定して使います。
 
@@ -406,10 +415,13 @@ node bin/cli-agent-runner.mjs run \
   --scope "scope:v1 paths=src/,tests/" \
   --assignment "Implement the scoped change" \
   --expected-output "Changed files and verification" \
-  --runner codex-cli
+  --runner codex-cli \
+  --timeout-ms 1800000
 ```
 
 `--scope` には、リポジトリ全体なら `scope:v1 all`、一部なら `scope:v1 paths=<リポジトリからの相対パスをカンマ区切りで>` を書きます。範囲の外にコミットしていない変更があるときは、起動の前にコミットするか消すか、そのパスを範囲に含めてください。
+
+`--timeout-ms` は、実行してよい時間の上限です。これもプロファイルの `timeoutMs` もないと 2 分で止まるので、ちょっとした確認にしか足りません。例では 30 分にしています。作業の大きさに合わせて決めてください。
 
 `run` と `orchestrate` を直接実行すると、トークンで保護されたライブコンソールが既定で立ち上がり、終わった後も Ctrl-C を押すまで画面を開いたままにします。コンソールなしで動かしたいとはっきり決めているときだけ、`--no-live-console` か `--silent` を付けます。
 
@@ -427,7 +439,8 @@ node bin/cli-agent-runner.mjs run \
   --delegation-mode local_orchestrator \
   --assignment "Own this coherent implementation and delegate only bounded internal helpers" \
   --expected-output "One integrated implementation result" \
-  --runner claude-cli
+  --runner claude-cli \
+  --timeout-ms 1800000
 ```
 
 ほかの実行と同じく、先に `intake` でタスクを記録してください。選んだプロファイルに階層の深さの既定値がないとき、このモードをはっきり指定すると、直下の子を 1 段だけ起動できるようになります。同梱の `grok-cli` は、最初から 1 段まで許しています。`codex-cli` と `claude-cli` は、このモードを指定しない限り子を起動できません。worker 専用の `delegate` コマンドは、その worker にだけ渡されます。普通の親のシェルから呼んでも、安全側に倒れて失敗します。
@@ -467,7 +480,8 @@ node bin/cli-agent-runner.mjs orchestrate \
   --epoch e1 \
   --scope "scope:v1 paths=README.md,tests/" \
   --runner grok-cli \
-  --jobs-file /path/to/jobs.json
+  --jobs-file /path/to/jobs.json \
+  --timeout-ms 1800000
 ```
 
 各 `ownerScope` は最上位の範囲の中に収め、同時に動くほかの作業と重ならないようにしてください。すべての作業が 1 つのライブコンソールを共有し、それぞれに別の実行 ID が付きます。
@@ -484,7 +498,7 @@ runner の設定は、同梱の既定値、ユーザー設定、`CLI_AGENT_RUNNE
 
 - ライブコンソールは自分のマシンの中（loopback）からしか接続できず、起動時に生成されるトークンが必要です。トークン付きの URL は丸ごと、外に出してはいけない情報として扱い、コミット、ログ、issue、外部へのメッセージに貼らないでください。
 - runner のプロファイルは、設定された引数と、引き継いだ環境変数でローカルのコマンドを実行します。他人が作った runner の JSON は実行可能なコードとして扱い、使う前に中身を確かめてください。独自の設定は、worker が書き込める作業対象の外に置いてください。
-- 書き込み範囲の確認は、起動の前と実行の後に Git の変更を調べ、問題があれば止める仕組みです。書き込み自体を封じるものではありません。Git が無視しているパスや、リポジトリの外への書き込みは検出できず、各提供元の権限の仕組みや OS のサンドボックスの代わりにはなりません。
+- 書き込み範囲の確認は、起動の前と実行の後に Git の変更を調べ、問題があれば止める仕組みです。書き込み自体を封じるものではありません。`run` では、Git が無視しているパスや、リポジトリの外への書き込みは検出できません。`orchestrate` では、作業の `ownerScope` の外で Git が無視しているファイルへの変更は、書き戻さずに捨てます。どちらも、各提供元の権限の仕組みや OS のサンドボックスの代わりにはなりません。
 - 正本はプラグインのソースです。`~/.codex/plugins/cache/` や `~/.claude/plugins/cache/` を直接書き換えないでください。
 
 脆弱性の報告は [`SECURITY.md`](SECURITY.md) を見てください。

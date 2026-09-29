@@ -20,6 +20,7 @@ import {
   collectWorkspaceChanges,
   createOrchestrationWorkspace,
   integrateOrchestrationChanges,
+  snapshotPrefixes,
 } from "../lib/orchestration-workspace.mjs";
 
 const TOOL = "cli-agent-runner";
@@ -301,6 +302,22 @@ async function main() {
   }
 }
 
+const BOOLEAN_FLAGS = new Set(["execute", "dry-run", "live-console", "no-live-console", "silent"]);
+const VALUE_FLAGS = new Set([
+  "assignment", "assumptions", "blockers", "cancel-reason", "changed-files", "completion-coverage",
+  "contract-coverage", "cwd", "decision-coverage", "delegate-id", "delegation-mode", "depth", "epoch",
+  "expected-output", "feature-profile", "finalization-references", "findings", "focus-scope", "hard-timeout",
+  "heartbeat-deadline", "heartbeat-interval", "hierarchy-mode", "hierarchy-override-reason", "jobs-file",
+  "lifecycle-disposition", "live-console-port", "live-console-url", "max-depth", "max-silence", "next",
+  "no-interrupt-until", "port", "proposed-files", "remaining-depth", "role", "runner", "runner-config",
+  "runtime-thread-closed", "scope", "soft-timeout", "source-spec-coverage", "status", "target-cwd", "task",
+  "task-id", "timeout-ms", "verification", "work-type",
+  ...METACOGNITIVE_GATE_FIELDS.map((field) => field.replaceAll("_", "-")),
+]);
+
+// Unknown flags fail instead of being ignored: a mistyped --runner or
+// --target-cwd would otherwise silently change what the command does.
+// "--flag=value" passes a value that itself starts with "--".
 function parseArgs(argv) {
   const parsed = { command: null, help: false };
   for (let i = 0; i < argv.length; i += 1) {
@@ -314,21 +331,31 @@ function parseArgs(argv) {
       continue;
     }
     if (token.startsWith("--")) {
-      const key = token.slice(2);
-      if (["execute", "dry-run", "live-console", "no-live-console", "silent"].includes(key)) {
+      const separator = token.indexOf("=");
+      const key = separator === -1 ? token.slice(2) : token.slice(2, separator);
+      if (BOOLEAN_FLAGS.has(key)) {
+        if (separator !== -1) throw new CliError(`--${key} does not take a value`);
         parsed[toCamel(key)] = true;
         continue;
       }
-      const value = argv[i + 1];
-      if (!value || value.startsWith("--")) {
-        throw new CliError(`missing value for --${key}`);
+      if (!VALUE_FLAGS.has(key)) {
+        throw new CliError(`unknown option: --${key}; see --help`);
+      }
+      let value;
+      if (separator !== -1) {
+        value = token.slice(separator + 1);
+      } else {
+        value = argv[i + 1];
+        if (!value || value.startsWith("--")) {
+          throw new CliError(`missing value for --${key}; use --${key}=<value> for a value starting with --`);
+        }
+        i += 1;
       }
       const parsedKey = toCamel(key);
       if (["lifecycle-disposition", "cancel-reason"].includes(key) && Object.hasOwn(parsed, parsedKey)) {
         throw new CliError(`duplicate --${key}; provide exactly one value`);
       }
       parsed[parsedKey] = value;
-      i += 1;
       continue;
     }
     throw new CliError(`unexpected argument: ${token}`);
@@ -471,10 +498,12 @@ async function run(args) {
       console.log("ok live_console_owned: true");
     }
 
+    const interrupt = createRunInterrupt();
     try {
       appendRunnerEntry(commandContext, "Issued Assignments", renderAssignmentPacket(packet));
-      const result = await runWithRunner(commandContext, packet, runnerOptions);
+      const result = await runConfiguredCli(commandContext, packet, { ...runnerOptions, abortSignal: interrupt.signal });
       appendRunnerEntry(commandContext, "Process Runner Results", renderRunnerResult(result));
+      interrupt.dispose();
       console.log(`ok runner: ${result.runner}`);
       console.log(`ok spawned: ${result.spawned}`);
       console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
@@ -486,7 +515,7 @@ async function run(args) {
       if (result.liveConsoleStatus === "failed") console.log(`warn live_console_failure: ${result.liveConsoleFailure}`);
       if (result.summary) console.log(`ok summary: ${result.summary}`);
 
-      if (ownedLiveConsole) {
+      if (ownedLiveConsole && !interrupt.interrupted()) {
         console.log("ok live_console_run_finished: true");
         console.log("ok live_console_stop: press Ctrl-C");
         const stopSignal = await waitForStopSignal();
@@ -494,13 +523,15 @@ async function run(args) {
       }
 
       if (result.status !== "completed") {
-        throw new CliError(`runner ${result.runner} failed: ${result.failure}`, result.exitCode || 1);
+        const exitCode = interrupt.interrupted() ? signalExitCode(interrupt.interrupted()) : result.exitCode || 1;
+        throw new CliError(`runner ${result.runner} failed: ${result.failure}`, exitCode);
       }
       if (result.liveConsoleStatus === "failed") {
         throw new CliError(`Live Console streaming failed: ${result.liveConsoleFailure}`, 1);
       }
       return;
     } finally {
+      interrupt.dispose();
       await ownedLiveConsole?.close();
     }
   }
@@ -547,11 +578,6 @@ async function orchestrate(args) {
     packet.taskScope = taskIdentity.scope;
     return packet;
   });
-  const targetBaselineWorkspace = createOrchestrationWorkspace(commandContext.targetCwd);
-  const targetBaseline = targetBaselineWorkspace.baseline;
-  cleanupOrchestrationWorkspace(targetBaselineWorkspace);
-  const jobWorkspaces = packets.map(() => createOrchestrationWorkspace(commandContext.targetCwd));
-
   const liveConsoleDisabled = Boolean(args.noLiveConsole || args.silent);
   const runnerOptions = prepareOrchestrationRunnerExecution(
     commandContext,
@@ -559,36 +585,81 @@ async function orchestrate(args) {
     configuredRunner,
     preparedJobs.flatMap(({ prefixes }) => prefixes),
   );
+  const gitRoot = resolveGitRoot(commandContext.targetCwd);
+  const targetPrefix = toPosixPath(path.relative(gitRoot, realpathSync(commandContext.targetCwd)));
+  const toRootPrefixes = (prefixes) => prefixes.map((prefix) => (
+    !targetPrefix ? prefix : prefix === "." ? targetPrefix : `${targetPrefix}/${prefix}`
+  ));
   const useOwnedLiveConsole = !liveConsoleDisabled && !args.liveConsoleUrl;
   let ownedLiveConsole = null;
-  if (useOwnedLiveConsole) {
-    const port = parsePort(args.liveConsolePort ?? "0", "--live-console-port");
-    ownedLiveConsole = await startLiveConsole({ port });
-    runnerOptions.liveConsoleUrl = ownedLiveConsole.eventsUrl;
-    console.log(`ok live_console_viewer_url: ${ownedLiveConsole.viewerUrl}`);
-    console.log(`ok live_console_ingest_url: ${ownedLiveConsole.eventsUrl}`);
-    console.log("ok live_console_owned: true");
-  }
+  const jobWorkspaces = [];
+  const interrupt = createRunInterrupt();
 
   try {
+    if (useOwnedLiveConsole) {
+      const port = parsePort(args.liveConsolePort ?? "0", "--live-console-port");
+      ownedLiveConsole = await startLiveConsole({ port });
+      runnerOptions.liveConsoleUrl = ownedLiveConsole.eventsUrl;
+      console.log(`ok live_console_viewer_url: ${ownedLiveConsole.viewerUrl}`);
+      console.log(`ok live_console_ingest_url: ${ownedLiveConsole.eventsUrl}`);
+      console.log("ok live_console_owned: true");
+    }
+
+    // The real worktree's state under every owner scope is recorded before
+    // any job starts; integration refuses to overwrite a path that changed.
+    const targetBaseline = snapshotPrefixes(
+      gitRoot,
+      toRootPrefixes(minimizeScopePrefixes(preparedJobs.flatMap(({ prefixes }) => prefixes))),
+    );
+    for (const { prefixes } of preparedJobs) {
+      const workspace = createOrchestrationWorkspace({ gitRoot, targetPrefix });
+      jobWorkspaces.push(workspace);
+      workspace.rootPrefixes = toRootPrefixes(prefixes);
+      workspace.baseline = snapshotPrefixes(workspace.root, workspace.rootPrefixes);
+    }
+
     for (const packet of packets) {
       appendRunnerEntry(commandContext, "Issued Assignments", renderAssignmentPacket(packet));
     }
 
     const results = await Promise.all(packets.map(async (packet, index) => {
       const workspace = jobWorkspaces[index];
-      const jobContext = { ...commandContext, targetCwd: workspace.root };
-      const shadowPacket = { ...packet, invocationCwd: workspace.root, targetCwd: workspace.root };
+      const jobContext = { ...commandContext, targetCwd: workspace.cwd, stateCwd: commandContext.targetCwd };
+      const shadowPacket = { ...packet, invocationCwd: workspace.cwd, targetCwd: workspace.cwd };
+      const prefixes = preparedJobs[index].prefixes;
       try {
-        const result = await runWithRunner(jobContext, shadowPacket, { ...runnerOptions, scopePrefixes: preparedJobs[index].prefixes });
+        const result = await runConfiguredCli(jobContext, shadowPacket, {
+          ...runnerOptions,
+          scopePrefixes: prefixes,
+          authorityPrefixes: prefixes,
+          abortSignal: interrupt.signal,
+        });
         result.targetCwd = commandContext.targetCwd;
         result.invocationCwd = commandContext.invocationCwd;
-        if (result.status === "completed" && result.liveConsoleStatus !== "failed") result.orchestrationChanges = collectWorkspaceChanges(workspace);
         return result;
       } catch (error) {
         return orchestrationFailureResult(packet, runnerOptions, error);
       }
     }));
+
+    // Jobs own disjoint scopes, so each completed job is integrated on its
+    // own; a failed job leaves the real worktree untouched.  Live Console
+    // telemetry does not decide whether a job's work is kept.
+    results.forEach((result, index) => {
+      if (result.status !== "completed") return;
+      const workspace = jobWorkspaces[index];
+      try {
+        integrateOrchestrationChanges({
+          gitRoot,
+          workspace,
+          changes: collectWorkspaceChanges(workspace, workspace.baseline, workspace.rootPrefixes),
+          targetBaseline,
+        });
+      } catch (error) {
+        result.status = "failed";
+        result.failure = singleLine(error.message);
+      }
+    });
 
     for (const result of results) {
       appendRunnerEntry(commandContext, "Process Runner Results", renderRunnerResult(result));
@@ -603,25 +674,28 @@ async function orchestrate(args) {
       if (result.summary) console.log(`ok summary: ${result.summary}`);
     }
 
-    if (ownedLiveConsole) {
+    // Integration and recording finish before the default signal behavior
+    // returns, so a Ctrl-C cannot cut a write into the real worktree short.
+    interrupt.dispose();
+    if (ownedLiveConsole && !interrupt.interrupted()) {
       console.log("ok live_console_run_finished: true");
       console.log("ok live_console_stop: press Ctrl-C");
       const stopSignal = await waitForStopSignal();
       console.log(`ok live_console_stop_signal: ${stopSignal}`);
     }
 
-    const failed = results.find((result) => result.status !== "completed" || result.liveConsoleStatus === "failed");
+    const failed = results.find((result) => result.status !== "completed");
     if (failed) {
-      const failure = failed.liveConsoleStatus === "failed" ? failed.liveConsoleFailure : failed.failure;
-      throw new CliError(`orchestrated job ${failed.jobId} failed: ${failure}`, failed.exitCode || 1);
+      const exitCode = interrupt.interrupted() ? signalExitCode(interrupt.interrupted()) : failed.exitCode || 1;
+      throw new CliError(`orchestrated job ${failed.jobId} failed: ${failed.failure}`, exitCode);
     }
-    integrateOrchestrationChanges(
-      commandContext.targetCwd,
-      targetBaseline,
-      results.map((result) => result.orchestrationChanges || new Map()),
-    );
+    const consoleFailed = results.find((result) => result.liveConsoleStatus === "failed");
+    if (consoleFailed) {
+      throw new CliError(`Live Console streaming failed for job ${consoleFailed.jobId}: ${consoleFailed.liveConsoleFailure}`, 1);
+    }
     console.log(`ok orchestrated_jobs: ${results.length}`);
   } finally {
+    interrupt.dispose();
     for (const workspace of jobWorkspaces) cleanupOrchestrationWorkspace(workspace);
     await ownedLiveConsole?.close();
   }
@@ -646,7 +720,7 @@ async function delegate(args) {
       featureProfile: resolveFeatureProfile(args.featureProfile).id,
     },
   });
-  console.log(`ok delegated_run_id: ${result.liveConsoleRunId}`);
+  console.log(`ok delegated_run_id: ${result.runId}`);
   console.log(`ok parent_run_id: ${result.parentRunId}`);
   console.log(`ok status: ${result.status}`);
   console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
@@ -793,9 +867,9 @@ function orchestrationFailureResult(packet, options, error) {
     summary: singleLine(error.message),
     finalizationReferences: "none",
     failure: singleLine(error.message),
-    liveConsoleStatus: options.liveConsoleUrl ? "failed" : "disabled",
+    liveConsoleStatus: options.liveConsoleUrl ? "not_started" : "disabled",
     liveConsoleRunId: "none",
-    liveConsoleFailure: options.liveConsoleUrl ? singleLine(error.message) : "none",
+    liveConsoleFailure: "none",
     metacognitiveGate: packet.metacognitiveGate,
     metacognitiveFields: {},
   };
@@ -822,65 +896,60 @@ function prepareRunnerExecution(commandContext, packet, args, resolvedRunner = n
   const liveConsoleUrl = args.liveConsoleUrl
     ? resolveLiveConsoleIngestUrl(args.liveConsoleUrl).toString()
     : null;
-  return { ...configured, timeoutMs, scopePrefixes, liveConsoleUrl };
+  return { ...configured, timeoutMs, scopePrefixes, authorityPrefixes: scopePrefixes, liveConsoleUrl };
 }
 
-async function runWithRunner(commandContext, packet, options) {
-  // Orchestrated jobs share launch-time preflight, but each worker's
-  // post-run guard must enforce only that worker's ownerScope.  The union
-  // retained by prepareOrchestrationRunnerExecution is intentionally not an
-  // execution permission boundary.
-  const packetScopePrefixes = packet.jobId
-    ? assertMachineRunnableScope(packet, commandContext.targetCwd)
-    : options.scopePrefixes;
-  return runConfiguredCli(commandContext, packet, {
-    ...options,
-    scopePrefixes: packetScopePrefixes,
-  });
-}
-
+// options.scopePrefixes is the post-run guard for this process: the packet's
+// own scope for run, the job's ownerScope for orchestrate, and the collective
+// declared focus set for brokered descendants.  options.authorityPrefixes is
+// what this process may hand to its own descendants.
 async function runConfiguredCli(commandContext, packet, options) {
   const { timeoutMs, scopePrefixes, profile } = options;
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-runner-"));
-  const outputPath = path.join(tempDir, "last-message.md");
   const cwd = commandContext.targetCwd;
   const beforePaths = readGitChangedPaths(cwd);
-  const liveConsoleRunId = options.liveConsoleUrl
-    ? `${packet.taskId}:${packet.epoch}${packet.jobId ? `:${packet.jobId}` : ""}:${randomUUID()}`
-    : "none";
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-runner-"));
+  const outputPath = path.join(tempDir, "last-message.md");
+  // Every run has an ID, so delegated lineage survives without a console.
+  const runId = `${packet.taskId}:${packet.epoch}${packet.jobId ? `:${packet.jobId}` : ""}:${randomUUID()}`;
+  const liveConsoleRunId = options.liveConsoleUrl ? runId : "none";
   const runtimePacket = {
     ...packet,
+    runId,
     liveConsoleRunId,
     delegationBrokerAvailable: false,
   };
   const delegationState = { entries: [], scopePrefixes: [] };
+  // Descendants stop when this run stops, whichever way it ends.
+  const runAbort = new AbortController();
+  const stopDescendants = () => runAbort.abort(options.abortSignal?.reason ?? "parent run ended");
+  options.abortSignal?.addEventListener("abort", stopDescendants, { once: true });
   let delegationBroker = null;
-  if (packet.delegationMode === "local_orchestrator") {
-    delegationBroker = await startDelegationBroker({
-      onDelegate: (request) => runDelegatedChild(
-        commandContext,
-        runtimePacket,
-        options,
-        liveConsoleRunId,
-        request,
-        delegationState,
-      ),
-    });
-    runtimePacket.delegationBrokerAvailable = true;
-  }
-  const prompt = renderRunnerPrompt(runtimePacket);
-  const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
-  const publisher = options.liveConsoleUrl
-    ? createLiveConsolePublisher({ url: options.liveConsoleUrl, runId: liveConsoleRunId })
-    : null;
-  const streamAdapter = createRunnerStreamAdapter({
-    format: profile.stream,
-    onEvent: (event) => {
-      if (publisher) void publisher.publish(event).catch(() => {});
-    },
-  });
   let result;
   try {
+    if (packet.delegationMode === "local_orchestrator") {
+      delegationBroker = await startDelegationBroker({
+        onDelegate: (request) => runDelegatedChild(
+          commandContext,
+          runtimePacket,
+          { ...options, abortSignal: runAbort.signal },
+          runId,
+          request,
+          delegationState,
+        ),
+      });
+      runtimePacket.delegationBrokerAvailable = true;
+    }
+    const prompt = renderRunnerPrompt(runtimePacket);
+    const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
+    const publisher = options.liveConsoleUrl
+      ? createLiveConsolePublisher({ url: options.liveConsoleUrl, runId: liveConsoleRunId })
+      : null;
+    const streamAdapter = createRunnerStreamAdapter({
+      format: profile.stream,
+      onEvent: (event) => {
+        if (publisher) void publisher.publish(event).catch(() => {});
+      },
+    });
     if (publisher) {
       const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
       await publisher.publish({
@@ -901,6 +970,7 @@ async function runConfiguredCli(commandContext, packet, options) {
       env: childEnvironment,
       input: invocation.input,
       timeoutMs,
+      abortSignal: options.abortSignal,
       onChunk: (stream, chunk) => streamAdapter.write(stream, chunk),
       onEnd: (stream) => streamAdapter.end(stream),
     });
@@ -916,8 +986,14 @@ async function runConfiguredCli(commandContext, packet, options) {
       result,
       runnerStreamFormat: profile.stream,
     });
+    const providerError = streamAdapter.reportedError();
+    if (providerError && normalized.status === "completed") {
+      normalized.status = "failed";
+      normalized.failure = `runner reported an error result: ${providerError}`;
+    }
     const guarded = applyScopeGuard(normalized, packet, cwd, beforePaths, scopePrefixes);
     guarded.liveConsoleStatus = publisher ? "connected" : "disabled";
+    guarded.runId = runId;
     guarded.liveConsoleRunId = liveConsoleRunId;
     guarded.liveConsoleFailure = "none";
     if (publisher) {
@@ -943,9 +1019,15 @@ async function runConfiguredCli(commandContext, packet, options) {
     }
     return guarded;
   } finally {
+    options.abortSignal?.removeEventListener("abort", stopDescendants);
+    if (!runAbort.signal.aborted) runAbort.abort("parent run ended");
     await delegationBroker?.close();
     rmSync(tempDir, { recursive: true, force: true });
   }
+}
+
+function recordedDelegation(commandContext, record) {
+  return commandContext.stateCwd ? { ...record, targetCwd: commandContext.stateCwd } : record;
 }
 
 async function runDelegatedChild(commandContext, parentPacket, options, parentRunId, request, delegationState) {
@@ -961,7 +1043,7 @@ async function runDelegatedChild(commandContext, parentPacket, options, parentRu
 
   const focusScope = requireIdentityArg(request?.focusScope, "focusScope");
   const focusPrefixes = assertMachineRunnableScope({ scope: focusScope }, commandContext.targetCwd);
-  const authorityPrefixes = assertMachineRunnableScope(parentPacket, commandContext.targetCwd);
+  const authorityPrefixes = options.authorityPrefixes;
   const outsideAuthority = focusPrefixes.filter(
     (prefix) => !scopePrefixIsContained(prefix, authorityPrefixes),
   );
@@ -1026,18 +1108,20 @@ async function runDelegatedChild(commandContext, parentPacket, options, parentRu
     ...collectiveFocusPrefixes,
   );
 
-  appendRunnerEntry(commandContext, "Delegated Assignments", renderAssignmentPacket(packet));
+  appendRunnerEntry(commandContext, "Delegated Assignments", renderAssignmentPacket(recordedDelegation(commandContext, packet)));
   const childOptions = {
     ...options,
     scopePrefixes: delegationState.scopePrefixes,
+    authorityPrefixes: focusPrefixes,
   };
-  const result = await runWithRunner(commandContext, packet, childOptions);
-  appendRunnerEntry(commandContext, "Delegated Runner Results", renderRunnerResult(result));
+  const result = await runConfiguredCli(commandContext, packet, childOptions);
+  appendRunnerEntry(commandContext, "Delegated Runner Results", renderRunnerResult(recordedDelegation(commandContext, result)));
   return {
     status: result.status,
     exitCode: result.exitCode,
     summary: result.summary,
     failure: result.failure,
+    runId: result.runId,
     liveConsoleRunId: result.liveConsoleRunId,
     parentRunId,
   };
@@ -1140,6 +1224,30 @@ async function liveConsole(args) {
   await server.close();
 }
 
+// Workers run in their own process groups, so a terminal Ctrl-C reaches only
+// this process.  The first SIGINT, SIGTERM, or SIGHUP stops every worker and
+// lets the command record the interrupted results; a second one exits at once.
+function createRunInterrupt() {
+  const controller = new AbortController();
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
+  const onSignal = (signal) => {
+    if (controller.signal.aborted) process.exit(signalExitCode(signal));
+    controller.abort(signal);
+  };
+  for (const signal of signals) process.on(signal, onSignal);
+  return {
+    signal: controller.signal,
+    interrupted: () => (controller.signal.aborted ? controller.signal.reason : null),
+    dispose: () => {
+      for (const signal of signals) process.off(signal, onSignal);
+    },
+  };
+}
+
+function signalExitCode(signal) {
+  return 128 + (os.constants.signals[signal] || 1);
+}
+
 function waitForStopSignal() {
   return new Promise((resolve) => {
     const stop = (signal) => {
@@ -1168,8 +1276,54 @@ function selectRunnerSummarySource({ runnerResultSource, outputFile, stdout, std
 function workerReportedBlocker(text) {
   const json = parseWorkerJsonResult(text);
   if (json) return jsonReportedBlocker(json);
-  const blockers = getFieldValue(text, "blockers");
-  return blockers && !isMetacognitiveNoEvidenceValue(blockers) ? blockers : null;
+  const items = lastBlockerFieldItems(text);
+  const blockers = items.filter((item) => !isNoBlockerValue(item));
+  return blockers.length ? blockers.join("; ") : null;
+}
+
+// Workers write the blocker field in many shapes: "- blockers: x",
+// "**blockers:** x", "blocker: x", or an empty field followed by indented list
+// items.  The last such field outside code fences is the final report.
+function lastBlockerFieldItems(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const fieldPattern = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?blockers?(?:\*\*|__)?\s*[:：]\s*(?:\*\*|__)?\s*(.*)$/i;
+  let items = [];
+  let inFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*(?:```|~~~)/.test(lines[index])) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    const match = fieldPattern.exec(lines[index]);
+    if (!match) continue;
+    const value = match[1].trim();
+    if (value) {
+      items = [value];
+      continue;
+    }
+    items = [];
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const item = /^\s+[-*+]\s+(.*)$/.exec(lines[next]);
+      if (!item) break;
+      items.push(item[1].trim());
+    }
+    if (!items.length) items = ["none"];
+  }
+  return items;
+}
+
+const NO_BLOCKER_PHRASE = "(?:none|none found|none identified|none reported|none remaining|no|no blockers?|no blockers? (?:found|identified|reported|remain|remaining)|nothing|nothing blocking|n/a|na|nil|null|-|—|なし|無し|特になし|ありません|ない)";
+
+function isNoBlockerValue(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/[*_`"']/g, "")
+    .replace(/^\((.*)\)$/, "$1")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return true;
+  return new RegExp(`^${NO_BLOCKER_PHRASE}(?:[.;,:!。、]|\\s+[—–-]\\s|$)`).test(normalized);
 }
 
 // Only an object carrying status or blockers is a result; other JSON, such as
@@ -1192,15 +1346,19 @@ function parseWorkerJsonResult(text) {
 }
 
 function jsonReportedBlocker(result) {
-  const listed = Array.isArray(result.blockers) ? result.blockers.map(String).join("; ") : result.blockers;
-  const blockers = typeof listed === "string" && !isMetacognitiveNoEvidenceValue(listed) ? listed : null;
+  const listed = Array.isArray(result.blockers) ? result.blockers : [result.blockers];
+  const blockers = listed
+    .filter((item) => item !== null && item !== undefined && typeof item !== "object")
+    .map(String)
+    .filter((item) => !isNoBlockerValue(item));
+  if (blockers.length) return blockers.join("; ");
   const status = typeof result.status === "string" ? result.status.trim().toLowerCase() : "";
-  if (blockers) return blockers;
-  return isBlockedOrUnresolvedStatus(status) || status === "failed" ? `status ${status}` : null;
+  return isBlockedOrUnresolvedStatus(status) || /^(?:failed|failure|error|errored)$/.test(status) ? `status ${status}` : null;
 }
 
 function runnerFailure({ result, exitCode, timedOut, unavailable, timeoutMs, runner, runnerCommand }) {
   if (!result.error && exitCode === 0) return "none";
+  if (result.error?.code === "EINTERRUPTED") return singleLine(result.error.message);
   if (unavailable) return `${runnerCommand} executable unavailable for runner ${runner}`;
   if (timedOut) return `timeout after ${timeoutMs}ms`;
   if (typeof exitCode === "number" && exitCode !== 0) return `nonzero exit ${exitCode}`;
@@ -1215,7 +1373,7 @@ role: ${packet.role}
 ${packet.jobId ? `job_id: ${packet.jobId}\n` : ""}task_id: ${packet.taskId}
 epoch: ${packet.epoch}
 scope: ${packet.scope}
-${packet.taskScope ? `task_scope: ${packet.taskScope}\nowner_scope: ${packet.scope}\n` : ""}${packet.focusScope ? `focus_scope: ${packet.focusScope}\n` : ""}run_id: ${packet.liveConsoleRunId || "none"}
+${packet.taskScope ? `task_scope: ${packet.taskScope}\nowner_scope: ${packet.scope}\n` : ""}${packet.focusScope ? `focus_scope: ${packet.focusScope}\n` : ""}run_id: ${packet.runId || "none"}
 parent_run_id: ${packet.parentRunId || "none"}
 delegation_mode: ${packet.delegationMode}
 feature_profile: ${featureProfileId(packet)}
@@ -1459,7 +1617,7 @@ Read these planning files in order:
 
 Operational log:
 
-- \`runner.md\`: optional; created by \`assign\`, \`collect\`, or \`run\` only.
+- \`runner.md\`: optional; created only by runner activity: \`assign\`, \`collect\`, \`finalize\`, \`run\`, \`orchestrate\`, and brokered delegation.
 - Subagents are active only for scoped work. After collection, record workflow-state disposition as state_retired or continuation_expected; this workflow record does not close or reclaim a runtime thread.
 - ${NESTED_CLI_AGENT_RUNNER_PREFLIGHT}
 - ${SUPERVISION_HEARTBEAT}
@@ -2487,7 +2645,6 @@ function assertMachineRunnableScope(packet, cwd) {
 }
 
 function assertNoDirtyPathsOutsideMachineScope(cwd, scope, prefixes) {
-  if (prefixes.includes(".")) return;
   const dirtyOutsideScope = readGitChangedPaths(cwd)
     .filter((changedPath) => !isPathAllowedByScope(changedPath, prefixes));
   if (dirtyOutsideScope.length) {
@@ -2507,8 +2664,6 @@ function applyScopeGuard(result, packet, cwd, beforePaths, scopePrefixes = null)
       failure: `runner scope is not machine-checkable: ${packet.scope}`,
     };
   }
-  if (prefixes.includes(".")) return result;
-
   let afterPaths;
   try {
     afterPaths = readGitChangedPaths(cwd);
@@ -2540,17 +2695,18 @@ function parseMachineScopePrefixes(scope, cwd) {
   if (/[\r\n]/.test(rawScope)) {
     throw new CliError("run --runner <id> scope must be single-line; CR/LF are not allowed", 1);
   }
+  const normalizedScope = rawScope.trim();
+  if (!normalizedScope) return null;
+  // scope:v1 is an explicit path grammar, so a directory named "exclude/" is
+  // a path, not exclusion wording.  Only legacy prose is screened.
+  if (/^scope:v1(?:\s+|$)/i.test(normalizedScope)) {
+    return parseScopeV1Prefixes(normalizedScope, cwd);
+  }
   if (hasNegativeScopeWording(rawScope)) {
     throw new CliError(
       `run --runner <id> requires an affirmative machine-checkable path scope; negative or exclusion wording is not supported: ${rawScope}`,
       1,
     );
-  }
-
-  const normalizedScope = rawScope.trim();
-  if (!normalizedScope) return null;
-  if (/^scope:v1(?:\s+|$)/i.test(normalizedScope)) {
-    return parseScopeV1Prefixes(normalizedScope, cwd);
   }
   if (/^(?:\.|\.\/|repository|repo|target repo|whole repo|entire repo)$/i.test(normalizedScope)) return ["."];
 
@@ -2633,9 +2789,14 @@ function scopeTokenToRelativePath(token, cwd) {
   return relative;
 }
 
+function toPosixPath(value) {
+  return value.split(path.sep).join("/");
+}
+
 function isPathAllowedByScope(changedPath, prefixes) {
-  if (prefixes.includes(".")) return true;
   const normalized = changedPath.replace(/\\/g, "/");
+  if (normalized === ".." || normalized.startsWith("../")) return false;
+  if (prefixes.includes(".")) return true;
   return prefixes.some((prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`));
 }
 
@@ -2805,8 +2966,10 @@ ${renderMetacognitiveResultFields(result.metacognitiveGate, "missing from runner
 - lifecycle: ${renderRunnerLifecycle(result)}`;
 }
 
+// Orchestrated jobs run in a private worktree copy; their records still belong
+// to the real jobsite, which the job context names as stateCwd.
 function appendRunnerEntry(commandContext, heading, entry) {
-  const state = resolveWorkflowState(commandContext.targetCwd);
+  const state = resolveWorkflowState(commandContext.stateCwd || commandContext.targetCwd);
   prepareStateWrite(state);
   mkdirSync(state.stateDir, { recursive: true });
   const runnerPath = path.join(state.stateDir, RUNNER_FILE);
@@ -4500,13 +4663,17 @@ function readGitStatus(cwd) {
   }
 }
 
+// Git reports paths relative to the repository root; scopes are relative to
+// the target cwd.  Paths outside a subdirectory target become "../..." so no
+// scope, including scope:v1 all, admits them.
 function readGitChangedPaths(cwd) {
   try {
-    const output = execFileSync("git", ["-C", cwd, "status", "--porcelain=v1", "-z", "--untracked-files=all"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return parsePorcelainZPaths(output).sort();
+    const gitOptions = { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] };
+    const targetPrefix = execFileSync("git", ["-C", cwd, "rev-parse", "--show-prefix"], gitOptions).trim().replace(/\/$/, "");
+    const output = execFileSync("git", ["-C", cwd, "status", "--porcelain=v1", "-z", "--untracked-files=all"], gitOptions);
+    return parsePorcelainZPaths(output)
+      .map((rootPath) => (targetPrefix ? path.posix.relative(targetPrefix, rootPath) : rootPath))
+      .sort();
   } catch (error) {
     const detail = singleLine(error.stderr || error.message || "unknown Git error");
     throw new CliError(`scope guard could not inspect Git changes: ${detail}`, 1);
@@ -4567,6 +4734,7 @@ Commands:
   run      Execute one configured CLI worker. Without --runner, record the legacy single-assignment skeleton.
   orchestrate
            Validate independent version-1 jobs, append every assignment, launch all jobs in parallel with one runner and Live Console, then append results in jobs-file order. Owner scopes must be inside the top-level task scope and pairwise non-overlapping.
+           Each job runs in a private copy of the target's Git worktree. A job that changes a Git-visible path outside its ownerScope fails. Each completed job's changes inside its ownerScope, including Git-ignored files there, are written back before results are recorded; Git-ignored changes outside the ownerScope are dropped. A path that changed in the real worktree during the run fails that job instead of being overwritten. A failed job writes nothing back. Every file under each ownerScope, Git-ignored ones included, is fingerprinted before and after the run, so a whole-repo scope over large ignored directories such as node_modules/ or target/ makes startup and integration slower; prefer narrower ownerScopes.
   delegate Worker-only local delegation client. It requires the runner-owned broker environment and cannot select a target, task identity, runner, or authority scope.
   live-console
            Start the built-in token-protected loopback viewer server for the host browser (Codex IAB or the Claude Code browser pane) and print its viewer and ingest URLs. Stop it with Ctrl-C.
@@ -4601,6 +4769,8 @@ State:
   Bundled runner ids are codex-cli, claude-cli, and grok-cli. Additional ids can be added through runner JSON without source edits.
   Runner config precedence is bundled defaults, user config, CLI_AGENT_RUNNER_CONFIG, then --runner-config. Jobsite workflow state is never an executable config source.
   With --runner <id>, --scope must be machine-checkable before runner.md is appended or the process launches.
+  Each worker runs as its own process group. --timeout-ms (or the profile's timeoutMs; default ${DEFAULT_RUNNER_TIMEOUT_MS} ms) stops the whole group, and processes the worker leaves running are stopped when it exits. This process timeout is separate from the supervision hard_timeout, which is workflow guidance for the parent. SIGINT, SIGTERM, or SIGHUP stops every worker, records the interrupted result, and exits 128+signal; a second signal exits immediately. Captured stdout and stderr keep their last 8 MiB each and mark any truncation.
+  Unknown options are rejected. Use --option=value for a value that starts with --.
   Runner machine scope grammar is "scope:v1 all" for the whole repo, or "scope:v1 paths=README.md,bin/cli-agent-runner.mjs,tests/" for comma-separated repo-relative prefixes.
   Absolute paths in "scope:v1 paths=" are accepted only when they resolve inside the target cwd and are normalized to repo-relative prefixes.
   Legacy runner scopes remain available only for simple path-only values such as "README.md", "allowed/", "bin/cli-agent-runner.mjs tests/workflow-state.test.mjs", ".", "repo", and "whole repo".

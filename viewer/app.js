@@ -62,7 +62,14 @@ function normalizeEnvelope(input) {
   };
 }
 
+// Only runner lifecycle events (run.* and delegation.*) describe a run;
+// provider events carry arbitrary JSON.
+function isLifecycleEvent(event) {
+  return /^(?:run|delegation)[.-]/.test(event.type);
+}
+
 function deriveStatus(event, prior = "running") {
+  if (!isLifecycleEvent(event)) return prior;
   const declared = typeof event.data?.status === "string" ? event.data.status : "";
   if (/^(?:complete|completed|success|succeeded)$/i.test(declared)) return "completed";
   if (/^(?:fail|failed|failure|error|timeout|cancel|cancelled|canceled)$/i.test(declared)) return "failed";
@@ -84,18 +91,21 @@ function upsertEvent(input) {
   run.events.push(event);
   run.events.sort((left, right) => left.sequence - right.sequence || String(left.timestamp).localeCompare(String(right.timestamp)));
   run.status = deriveStatus(event, run.status);
-  if (typeof event.data?.parentRunId === "string" && event.data.parentRunId) run.parentRunId = event.data.parentRunId;
-  if (Number.isSafeInteger(event.data?.depth) && event.data.depth >= 0) run.depth = event.data.depth;
-  if (["leaf", "local_orchestrator"].includes(event.data?.delegationMode)) run.delegationMode = event.data.delegationMode;
-  if (typeof event.data?.focusScope === "string" && event.data.focusScope) run.focusScope = event.data.focusScope;
+  if (isLifecycleEvent(event)) {
+    if (typeof event.data?.parentRunId === "string" && event.data.parentRunId) run.parentRunId = event.data.parentRunId;
+    if (Number.isSafeInteger(event.data?.depth) && event.data.depth >= 0) run.depth = event.data.depth;
+    if (["leaf", "local_orchestrator"].includes(event.data?.delegationMode)) run.delegationMode = event.data.delegationMode;
+    if (typeof event.data?.focusScope === "string" && event.data.focusScope) run.focusScope = event.data.focusScope;
+  }
   if (run.events.length > state.maxEventsPerRun) {
     run.events.splice(0, run.events.length - state.maxEventsPerRun);
   }
   state.runs.set(run.runId, run);
   while (state.runs.size > state.maxRuns) {
-    const oldestRunId = state.runs.keys().next().value;
-    state.runs.delete(oldestRunId);
-    if (state.selectedRunId === oldestRunId) state.selectedRunId = null;
+    const finished = [...state.runs.values()].find((candidate) => candidate.status !== "running");
+    const evictedRunId = finished ? finished.runId : state.runs.keys().next().value;
+    state.runs.delete(evictedRunId);
+    if (state.selectedRunId === evictedRunId) state.selectedRunId = null;
   }
   if (!state.selectedRunId) state.selectedRunId = run.runId;
 }
@@ -321,7 +331,9 @@ function scheduleRender() {
     render();
   });
 }
-function escapeHtml(value) { const node = document.createElement("span"); node.textContent = String(value ?? ""); return node.innerHTML; }
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]);
+}
 
 function resetTimelineView() {
   state.timelineFilter = "all";

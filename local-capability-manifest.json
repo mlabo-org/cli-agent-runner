@@ -3,7 +3,7 @@
   "publisher": "suzuki-makoto",
   "packageKind": "plugin",
   "packageId": "cli-agent-runner",
-  "descriptorVersion": "0.4.1",
+  "descriptorVersion": "0.5.0",
   "capabilities": [
     {
       "leafId": "cli-agent-runner",
