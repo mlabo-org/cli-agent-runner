@@ -186,7 +186,7 @@ node bin/cli-agent-runner.mjs run \
 
 `--timeout-ms` is the process time limit. Without it (or a profile `timeoutMs`), a worker is stopped after 2 minutes, which suits only a quick check; the examples allow 30 minutes. Size it to the assignment.
 
-Direct `run` and `orchestrate` commands start a token-protected loopback Live Console by default and keep the finished page open until you press Ctrl-C. Use `--no-live-console` or `--silent` only when you explicitly want to run without a console.
+Direct `run` and `orchestrate` commands start a token-protected loopback Live Console by default and keep the finished page open until you press Ctrl-C. A console that nobody uses stops by itself: once no run is unfinished and no request or event has arrived for 15 minutes (`--idle-timeout-seconds <n>` changes this), it exits. The standalone `live-console` command follows the same rule. Use `--no-live-console` or `--silent` only when you explicitly want to run without a console.
 
 `node bin/cli-agent-runner.mjs --help` lists every command and option, including `--timeout-ms`, supervision timings, `--work-type`, and `--feature-profile`.
 
@@ -423,7 +423,7 @@ node bin/cli-agent-runner.mjs run \
 
 `--timeout-ms` は、実行してよい時間の上限です。これもプロファイルの `timeoutMs` もないと 2 分で止まるので、ちょっとした確認にしか足りません。例では 30 分にしています。作業の大きさに合わせて決めてください。
 
-`run` と `orchestrate` を直接実行すると、トークンで保護されたライブコンソールが既定で立ち上がり、終わった後も Ctrl-C を押すまで画面を開いたままにします。コンソールなしで動かしたいとはっきり決めているときだけ、`--no-live-console` か `--silent` を付けます。
+`run` と `orchestrate` を直接実行すると、トークンで保護されたライブコンソールが既定で立ち上がり、終わった後も Ctrl-C を押すまで画面を開いたままにします。使われなくなったコンソールは自分で終了します。終わっていない実行がなく、リクエストもイベントも 15 分来なければ終了します（`--idle-timeout-seconds <秒>` で変えられます）。単体の `live-console` コマンドも同じです。コンソールなしで動かしたいとはっきり決めているときだけ、`--no-live-console` か `--silent` を付けます。
 
 すべてのコマンドとオプション（`--timeout-ms`、作業の見張りに使う時間の設定、`--work-type`、`--feature-profile` など）は、`node bin/cli-agent-runner.mjs --help` で確認できます。
 
