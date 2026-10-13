@@ -253,3 +253,28 @@ async function readUntil(reader, decoder, pattern) {
   }
   return received;
 }
+
+test("Live Console reports idle only after its runs finish and requests stop", async () => {
+  const fixture = makeViewerFixture();
+  const console = await startLiveConsole({ viewerRoot: fixture.root });
+  try {
+    let idle = false;
+    const startedAt = Date.now();
+    console.whenIdle(300).then(() => {
+      idle = true;
+    });
+    console.publish(event("run-idle", 1, { text: "working" }));
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    assert.equal(idle, false, "an unfinished run keeps the console in use");
+
+    console.publish({ ...event("run-idle", 2, {}), type: "run.completed" });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(idle, false, "the idle timeout counts from the last activity");
+    await new Promise((resolve) => setTimeout(resolve, 1_400));
+    assert.equal(idle, true);
+    assert.ok(Date.now() - startedAt >= 1_000);
+  } finally {
+    await console.close();
+    fixture.cleanup();
+  }
+});

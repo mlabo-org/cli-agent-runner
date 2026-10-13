@@ -307,7 +307,7 @@ const VALUE_FLAGS = new Set([
   "assignment", "assumptions", "blockers", "cancel-reason", "changed-files", "completion-coverage",
   "contract-coverage", "cwd", "decision-coverage", "delegate-id", "delegation-mode", "depth", "epoch",
   "expected-output", "feature-profile", "finalization-references", "findings", "focus-scope", "hard-timeout",
-  "heartbeat-deadline", "heartbeat-interval", "hierarchy-mode", "hierarchy-override-reason", "jobs-file",
+  "heartbeat-deadline", "heartbeat-interval", "hierarchy-mode", "hierarchy-override-reason", "idle-timeout-seconds", "jobs-file",
   "lifecycle-disposition", "live-console-port", "live-console-url", "max-depth", "max-silence", "next",
   "no-interrupt-until", "port", "proposed-files", "remaining-depth", "role", "runner", "runner-config",
   "runtime-thread-closed", "scope", "soft-timeout", "source-spec-coverage", "status", "target-cwd", "task",
@@ -517,9 +517,7 @@ async function run(args) {
 
       if (ownedLiveConsole && !interrupt.interrupted()) {
         console.log("ok live_console_run_finished: true");
-        console.log("ok live_console_stop: press Ctrl-C");
-        const stopSignal = await waitForStopSignal();
-        console.log(`ok live_console_stop_signal: ${stopSignal}`);
+        await holdLiveConsole(ownedLiveConsole, args);
       }
 
       if (result.status !== "completed") {
@@ -679,9 +677,7 @@ async function orchestrate(args) {
     interrupt.dispose();
     if (ownedLiveConsole && !interrupt.interrupted()) {
       console.log("ok live_console_run_finished: true");
-      console.log("ok live_console_stop: press Ctrl-C");
-      const stopSignal = await waitForStopSignal();
-      console.log(`ok live_console_stop_signal: ${stopSignal}`);
+      await holdLiveConsole(ownedLiveConsole, args);
     }
 
     const failed = results.find((result) => result.status !== "completed");
@@ -1218,10 +1214,32 @@ async function liveConsole(args) {
   console.log(`ok live_console_host: ${server.host}`);
   console.log(`ok live_console_port: ${server.port}`);
   console.log("ok live_console_owned: false");
-  console.log("ok live_console_stop: press Ctrl-C");
 
-  await waitForStopSignal();
+  await holdLiveConsole(server, args);
   await server.close();
+}
+
+const DEFAULT_IDLE_TIMEOUT_SECONDS = 15 * 60;
+
+// Keeps a console up for its viewer until a stop signal arrives or it has
+// gone unused for the idle timeout, whichever comes first.
+async function holdLiveConsole(server, args) {
+  const idleSeconds = parseIdleTimeoutSeconds(args.idleTimeoutSeconds);
+  console.log(`ok live_console_stop: press Ctrl-C; exits by itself after ${idleSeconds} idle seconds`);
+  const reason = await Promise.race([
+    waitForStopSignal(),
+    server.whenIdle(idleSeconds * 1_000).then(() => "idle-timeout"),
+  ]);
+  console.log(`ok live_console_stop_signal: ${reason}`);
+}
+
+function parseIdleTimeoutSeconds(value) {
+  if (value === undefined) return DEFAULT_IDLE_TIMEOUT_SECONDS;
+  const seconds = Number(value);
+  if (!Number.isSafeInteger(seconds) || seconds < 1) {
+    throw new CliError("--idle-timeout-seconds must be a positive integer");
+  }
+  return seconds;
 }
 
 // Workers run in their own process groups, so a terminal Ctrl-C reaches only
@@ -4719,7 +4737,7 @@ Usage:
   node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs delegate --delegate-id <id> --role <role> --focus-scope <machine-scope> --assignment <text> --expected-output <text> [--feature-profile <id>]
-  node bin/cli-agent-runner.mjs live-console [--port <0-65535>]
+  node bin/cli-agent-runner.mjs live-console [--port <0-65535>] [--idle-timeout-seconds <n>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
   node bin/cli-agent-runner.mjs normalize-debugging-integrity [--cwd <path>] [--target-cwd <path>] [--execute]
   node bin/cli-agent-runner.mjs handoff [--cwd <path>] [--target-cwd <path>] --task-id <id>
