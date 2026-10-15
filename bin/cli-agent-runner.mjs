@@ -16,6 +16,12 @@ import { runStreamingProcess } from "../lib/process-runner.mjs";
 import { buildRunnerInvocation, resolveConfiguredRunner } from "../lib/runner-registry.mjs";
 import { createRunnerStreamAdapter } from "../lib/runner-stream.mjs";
 import {
+  requiresTextGate,
+  sanitizeChildOutput,
+  scanUntrustedText,
+  spoofedAlertLine,
+} from "../lib/text-gate.mjs";
+import {
   cleanupOrchestrationWorkspace,
   collectWorkspaceChanges,
   createOrchestrationWorkspace,
@@ -302,7 +308,7 @@ async function main() {
   }
 }
 
-const BOOLEAN_FLAGS = new Set(["execute", "dry-run", "live-console", "no-live-console", "silent"]);
+const BOOLEAN_FLAGS = new Set(["allow-web", "execute", "dry-run", "live-console", "no-live-console", "silent"]);
 const VALUE_FLAGS = new Set([
   "assignment", "assumptions", "blockers", "cancel-reason", "changed-files", "completion-coverage",
   "contract-coverage", "cwd", "decision-coverage", "delegate-id", "delegation-mode", "depth", "epoch",
@@ -506,6 +512,7 @@ async function run(args) {
       interrupt.dispose();
       console.log(`ok runner: ${result.runner}`);
       console.log(`ok spawned: ${result.spawned}`);
+      console.log(`ok web_access: ${result.webAccess}`);
       console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
       console.log(`ok status: ${result.status}`);
       console.log(`ok feature_profile: ${featureProfileId(packet)}`);
@@ -537,6 +544,7 @@ async function run(args) {
   if (args.liveConsole || args.liveConsoleUrl || args.liveConsolePort !== undefined || liveConsoleDisabled) {
     throw new CliError("Live Console selection flags require --runner <id>", 1);
   }
+  if (args.allowWeb) throw new CliError("--allow-web requires --runner <id>", 1);
 
   appendRunnerEntry(commandContext, "Issued Assignments", renderAssignmentPacket(packet));
   appendRunnerEntry(commandContext, "Process Orchestration Skeletons", renderOrchestrationSkeleton(packet));
@@ -636,7 +644,7 @@ async function orchestrate(args) {
         result.invocationCwd = commandContext.invocationCwd;
         return result;
       } catch (error) {
-        return orchestrationFailureResult(packet, runnerOptions, error);
+        return unlaunchedFailureResult(packet, runnerOptions, error.message);
       }
     }));
 
@@ -664,6 +672,7 @@ async function orchestrate(args) {
       console.log(`ok job_id: ${result.jobId}`);
       console.log(`ok runner: ${result.runner}`);
       console.log(`ok spawned: ${result.spawned}`);
+      console.log(`ok web_access: ${result.webAccess}`);
       console.log(`ok exit_code: ${formatExitCode(result.exitCode)}`);
       console.log(`ok status: ${result.status}`);
       console.log(`${result.liveConsoleStatus === "failed" ? "warn" : "ok"} live_console_status: ${result.liveConsoleStatus}`);
@@ -826,10 +835,10 @@ function prepareOrchestrationRunnerExecution(commandContext, args, configuredRun
   const liveConsoleUrl = args.liveConsoleUrl
     ? resolveLiveConsoleIngestUrl(args.liveConsoleUrl).toString()
     : null;
-  return { ...configuredRunner, timeoutMs, scopePrefixes, liveConsoleUrl };
+  return { ...configuredRunner, timeoutMs, scopePrefixes, liveConsoleUrl, allowWeb: Boolean(args.allowWeb) };
 }
 
-function orchestrationFailureResult(packet, options, error) {
+function unlaunchedFailureResult(packet, options, failure) {
   return {
     type: "process-runner-result",
     timestamp: new Date().toISOString(),
@@ -860,12 +869,13 @@ function orchestrationFailureResult(packet, options, error) {
     timeoutMs: options.timeoutMs,
     assignment: packet.assignment,
     expectedOutput: packet.expectedOutput,
-    summary: singleLine(error.message),
+    summary: singleLine(failure),
     finalizationReferences: "none",
-    failure: singleLine(error.message),
+    failure: singleLine(failure),
     liveConsoleStatus: options.liveConsoleUrl ? "not_started" : "disabled",
     liveConsoleRunId: "none",
     liveConsoleFailure: "none",
+    webAccess: "not_launched",
     metacognitiveGate: packet.metacognitiveGate,
     metacognitiveFields: {},
   };
@@ -892,7 +902,14 @@ function prepareRunnerExecution(commandContext, packet, args, resolvedRunner = n
   const liveConsoleUrl = args.liveConsoleUrl
     ? resolveLiveConsoleIngestUrl(args.liveConsoleUrl).toString()
     : null;
-  return { ...configured, timeoutMs, scopePrefixes, authorityPrefixes: scopePrefixes, liveConsoleUrl };
+  return {
+    ...configured,
+    timeoutMs,
+    scopePrefixes,
+    authorityPrefixes: scopePrefixes,
+    liveConsoleUrl,
+    allowWeb: Boolean(args.allowWeb),
+  };
 }
 
 // options.scopePrefixes is the post-run guard for this process: the packet's
@@ -935,19 +952,51 @@ async function runConfiguredCli(commandContext, packet, options) {
       });
       runtimePacket.delegationBrokerAvailable = true;
     }
-    const prompt = renderRunnerPrompt(runtimePacket);
-    const invocation = buildRunnerInvocation(profile, { prompt, cwd, outputFile: outputPath });
+    // The rendered prompt carries caller- and parent-supplied text, so it is
+    // gated before any child sees it; a spoofed domain or an unusable gate
+    // stops the launch.
+    const promptGate = await gateChildPrompt(renderRunnerPrompt(runtimePacket));
+    const invocation = promptGate.failure
+      ? null
+      : buildRunnerInvocation(profile, { prompt: promptGate.text, cwd, outputFile: outputPath, allowWeb: options.allowWeb });
     const publisher = options.liveConsoleUrl
       ? createLiveConsolePublisher({ url: options.liveConsoleUrl, runId: liveConsoleRunId })
       : null;
+    const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
+    if (promptGate.failure) {
+      const blocked = unlaunchedFailureResult(packet, options, promptGate.failure);
+      blocked.runId = runId;
+      blocked.liveConsoleRunId = liveConsoleRunId;
+      if (publisher) {
+        try {
+          await publisher.publish({
+            type: delegated ? "delegation.failed" : "run.failed",
+            text: blocked.failure,
+            data: liveRunMetadata(runtimePacket, options, profile.command, "failed"),
+          });
+          await publisher.drain();
+          blocked.liveConsoleStatus = "connected";
+        } catch (error) {
+          blocked.liveConsoleStatus = "failed";
+          blocked.liveConsoleFailure = singleLine(error.message);
+        }
+      }
+      return blocked;
+    }
+    // Console events are gated in arrival order on one queue, so the viewer
+    // never receives child text that text-gate has not seen.
+    let consoleQueue = Promise.resolve();
     const streamAdapter = createRunnerStreamAdapter({
       format: profile.stream,
       onEvent: (event) => {
-        if (publisher) void publisher.publish(event).catch(() => {});
+        if (!publisher) return;
+        consoleQueue = consoleQueue
+          .then(() => gateConsoleEvent(event))
+          .then((safeEvent) => publisher.publish(safeEvent))
+          .catch(() => {});
       },
     });
     if (publisher) {
-      const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
       await publisher.publish({
         type: delegated ? "delegation.started" : "run.started",
         text: delegated
@@ -972,29 +1021,48 @@ async function runConfiguredCli(commandContext, packet, options) {
     });
     const structuredResult = streamAdapter.resultText();
     if (structuredResult && invocation.resultSource === "stdout") result.stdout = structuredResult;
+    // Everything the caller receives about the child's answer (summary,
+    // blockers, finalization references, metacognitive fields) derives from
+    // this one string, so it is gated once here.
+    const resultGate = await gateChildOutput(selectRunnerSummarySource({
+      runnerResultSource: invocation.resultSource,
+      outputFile: existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "",
+      stdout: result.stdout,
+      stderr: result.stderr,
+      errorMessage: result.error?.message,
+    }));
     const normalized = normalizeRunnerResult(packet, {
       runner: options.runner,
       runnerCommand: invocation.command,
       runnerResultSource: invocation.resultSource,
       runnerConfigSources: options.sourcePaths,
       timeoutMs,
-      outputPath,
+      summarySource: resultGate.text,
       result,
       runnerStreamFormat: profile.stream,
     });
+    normalized.webAccess = invocation.webAccess;
     const providerError = streamAdapter.reportedError();
     if (providerError && normalized.status === "completed") {
+      const providerGate = await gateChildOutput(providerError);
       normalized.status = "failed";
-      normalized.failure = `runner reported an error result: ${providerError}`;
+      normalized.failure = providerGate.failure || `runner reported an error result: ${singleLine(providerGate.text)}`;
+    }
+    if (resultGate.failure) {
+      normalized.status = "failed";
+      normalized.failure = resultGate.failure;
     }
     const guarded = applyScopeGuard(normalized, packet, cwd, beforePaths, scopePrefixes);
+    // Scope-guard failures quote paths the child created; gate them as well.
+    const failureGate = await gateChildOutput(guarded.failure);
+    guarded.failure = failureGate.failure || singleLine(failureGate.text);
     guarded.liveConsoleStatus = publisher ? "connected" : "disabled";
     guarded.runId = runId;
     guarded.liveConsoleRunId = liveConsoleRunId;
     guarded.liveConsoleFailure = "none";
     if (publisher) {
       try {
-        const delegated = Boolean(packet.parentRunId && packet.parentRunId !== "none");
+        await consoleQueue;
         await publisher.publish({
           type: delegated
             ? guarded.status === "completed" ? "delegation.completed" : "delegation.failed"
@@ -1146,20 +1214,12 @@ function normalizeRunnerResult(packet, context) {
     runnerStreamFormat,
     runnerConfigSources,
     timeoutMs,
-    outputPath,
+    summarySource,
   } = context;
   const errorCode = result.error?.code || "";
   const timedOut = errorCode === "ETIMEDOUT";
   const unavailable = errorCode === "ENOENT";
   const exitCode = typeof result.status === "number" ? result.status : null;
-  const outputFile = existsSync(outputPath) ? readFileSync(outputPath, "utf8") : "";
-  const summarySource = selectRunnerSummarySource({
-    runnerResultSource,
-    outputFile,
-    stdout: result.stdout,
-    stderr: result.stderr,
-    errorMessage: result.error?.message,
-  });
   const processSucceeded = !result.error && exitCode === 0;
   const reportedBlocker = processSucceeded ? workerReportedBlocker(summarySource) : null;
   const baseStatus = processSucceeded && !reportedBlocker ? "completed" : "failed";
@@ -1278,6 +1338,50 @@ function waitForStopSignal() {
     process.once("SIGINT", onSigint);
     process.once("SIGTERM", onSigterm);
   });
+}
+
+// Returns { text } with the prompt text-gate produced, or { failure } when
+// the prompt names a spoofed domain or text-gate cannot vouch for it.  The
+// prompt always goes through text-gate, even when it is pure ASCII, so a
+// missing gate is noticed before the first launch.
+async function gateChildPrompt(prompt) {
+  let report;
+  try {
+    report = await scanUntrustedText(prompt);
+  } catch (error) {
+    return { failure: `${singleLine(error.message)}; the child was not launched` };
+  }
+  if (report.spoofed.length) {
+    return { failure: `${singleLine(spoofedAlertLine(report))}; the child was not launched` };
+  }
+  return { text: report.text };
+}
+
+// Returns { text } safe to show the caller, or { failure } with the output
+// withheld when text-gate fails.
+async function gateChildOutput(text) {
+  try {
+    return { text: await sanitizeChildOutput(text) };
+  } catch (error) {
+    return { text: "", failure: `child output withheld: ${singleLine(error.message)}` };
+  }
+}
+
+// The viewer shows both an event's text and its provider data, so both are
+// gated together through one serialized payload.  An event that cannot be
+// gated is replaced by a notice instead of being shown raw.
+async function gateConsoleEvent(event) {
+  const payload = JSON.stringify({ text: event.text ?? null, data: event.data ?? null });
+  if (!requiresTextGate(payload)) return event;
+  try {
+    const report = await scanUntrustedText(payload);
+    const safe = JSON.parse(report.text);
+    let text = typeof safe?.text === "string" ? safe.text : null;
+    if (report.spoofed.length) text = `${spoofedAlertLine(report)}\n${text ?? ""}`;
+    return { ...event, text, data: safe?.data ?? null };
+  } catch (error) {
+    return { ...event, text: `[cli-agent-runner: event withheld: ${singleLine(error.message)}]`, data: null };
+  }
 }
 
 function selectRunnerSummarySource({ runnerResultSource, outputFile, stdout, stderr, errorMessage }) {
@@ -4734,8 +4838,8 @@ Usage:
   node bin/cli-agent-runner.mjs assign [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text>
   node bin/cli-agent-runner.mjs collect [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] --status <status> --lifecycle-disposition state_retired|continuation_expected [--cancel-reason <allowed-reason>] [--findings <text>] [--changed-files <text>] [--verification <text>] [--blockers <text>] [--assumptions <text>] [--next <text>] [--finalization-references <typed-refs>] [--expected-outcome <text>] [--actual-result <text>] [--reproduction-or-evidence <text>] [--failure-point <text>] [--hypothesis-branches <text>] [--source-of-truth-boundary <text>] [--plugin-contract-boundary <text>] [--generated-artifact-boundary <text>] [--before-context-effects <text>] [--after-context-effects <text>] [--cross-feature-consequences <text>] [--root-cause <text>] [--fix-summary <text>] [--verification-evidence <text>] [--skipped-checks <text>] [--unresolved-risks <text>] [--next-investigation <text>]
   node bin/cli-agent-runner.mjs finalize [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--contract-coverage required] --decision-coverage <text> --completion-coverage <text> --source-spec-coverage <text>
-  node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
-  node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs run [--cwd <path>] [--target-cwd <path>] --role <role> --task-id <id> --epoch <epoch> --scope <scope> [--feature-profile <id>] [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] [--heartbeat-interval <ISO-8601 duration>] [--heartbeat-deadline <ISO-8601 duration>] [--max-silence <ISO-8601 duration>] [--soft-timeout <ISO-8601 duration>] [--hard-timeout <ISO-8601 duration>] [--no-interrupt-until <ISO-8601 duration>] --assignment <text> --expected-output <text> [--runner <id>] [--runner-config <path>] [--timeout-ms <ms>] [--allow-web] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
+  node bin/cli-agent-runner.mjs orchestrate [--cwd <path>] [--target-cwd <path>] --task-id <id> --epoch <epoch> --scope <scope> [--work-type <id>] [--delegation-mode leaf|local_orchestrator] [--hierarchy-mode none|one_level|n_level] [--max-depth <n>] [--depth <n>] [--remaining-depth <n>] [--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary] --runner <id> --jobs-file <version-1.json> [--runner-config <path>] [--timeout-ms <ms>] [--allow-web] [[--live-console] [--live-console-port <0-65535>] | --live-console-url <tokenized-loopback-url> | --no-live-console | --silent]
   node bin/cli-agent-runner.mjs delegate --delegate-id <id> --role <role> --focus-scope <machine-scope> --assignment <text> --expected-output <text> [--feature-profile <id>]
   node bin/cli-agent-runner.mjs live-console [--port <0-65535>] [--idle-timeout-seconds <n>]
   node bin/cli-agent-runner.mjs verify-assignments [--cwd <path>] [--target-cwd <path>]
@@ -4788,6 +4892,8 @@ State:
   Runner config precedence is bundled defaults, user config, CLI_AGENT_RUNNER_CONFIG, then --runner-config. Jobsite workflow state is never an executable config source.
   With --runner <id>, --scope must be machine-checkable before runner.md is appended or the process launches.
   Each worker runs as its own process group. --timeout-ms (or the profile's timeoutMs; default ${DEFAULT_RUNNER_TIMEOUT_MS} ms) stops the whole group, and processes the worker leaves running are stopped when it exits. This process timeout is separate from the supervision hard_timeout, which is workflow guidance for the parent. SIGINT, SIGTERM, or SIGHUP stops every worker, records the interrupted result, and exits 128+signal; a second signal exits immediately. Captured stdout and stderr keep their last 8 MiB each and mark any truncation.
+  Children stay off the web by default: a profile's webDisableArgs (bundled: grok --disable-web-search, codex -c web_search="disabled", claude --disallowedTools WebFetch WebSearch) stay in its args. --allow-web removes them for that run and its brokered descendants only.
+  Every child prompt goes through "text-gate scan --mode untrusted" (~/.local/bin/text-gate, or ${"$"}CLI_AGENT_RUNNER_TEXT_GATE) before launch. A spoofed domain, or a missing or failing text-gate, stops the launch. Child results and Live Console events are sanitized the same way: invisible characters are removed and spoofed domains are annotated with the alert and punycode. Pure ASCII without "xn--" skips the gate.
   Unknown options are rejected. Use --option=value for a value that starts with --.
   Runner machine scope grammar is "scope:v1 all" for the whole repo, or "scope:v1 paths=README.md,bin/cli-agent-runner.mjs,tests/" for comma-separated repo-relative prefixes.
   Absolute paths in "scope:v1 paths=" are accepted only when they resolve inside the target cwd and are normalized to repo-relative prefixes.

@@ -52,6 +52,7 @@ CLI Agent Runner gives a parent Codex or Claude Code task a single, provider-neu
 - The loopback-only Live Console shows stdout, stderr, structured provider events, normalized results, and the lineage of brokered child helpers.
 - Scope is checked on both sides of a run. The runner refuses to launch while files outside the scope have uncommitted changes, and any out-of-scope change left after the run is reported as an explicit failure.
 - A worker that exits with code 0 but reports a blocker in its result is recorded as failed, not completed.
+- Workers do not read the web by default (Grok `--disable-web-search`, Codex `web_search="disabled"`, Claude without `WebFetch`/`WebSearch`); `--allow-web` lifts this for one run. Every prompt passes through `text-gate` (`~/.local/bin/text-gate`) before launch: a spoofed domain or a missing gate stops the launch. Results and Live Console output are sanitized the same way (invisible characters removed, spoofed domains annotated). See [`docs/runner-configuration.md`](docs/runner-configuration.md#web-access-and-text-gate).
 - Each worker runs as its own process group. The process timeout (`--timeout-ms` or the profile's `timeoutMs`; 2 minutes when neither is set, so raise it for real agent work) stops the worker together with everything it started, and anything it leaves running is stopped when it exits. Ctrl-C stops every worker and records the interruption.
 - In `orchestrate`, each job works in a private copy of the repository. Only its changes inside its own `ownerScope` are written back, a job that edits outside it fails, and a file you change in the real repository during the run is never overwritten.
 
@@ -289,6 +290,7 @@ CLI Agent Runner は、親の Codex や Claude Code のタスクから CLI の w
 - 標準出力・標準エラー出力、提供元が出す構造化されたイベント、整えた結果、broker 経由で起動した子の補助作業の親子関係を、自分のマシンの中からだけ開けるライブコンソールで確認できます。
 - 書き込み範囲は、実行の前と後の両方で確かめます。範囲の外にコミットしていない変更があると起動を断り、実行後に範囲の外が変わっていれば、はっきり失敗として記録します。
 - worker が終了コード 0 で終わっても、結果の中で作業を止める問題（blocker）を報告していれば、完了ではなく失敗として記録します。
+- worker は既定では Web を読みません（Grok は `--disable-web-search`、Codex は `web_search="disabled"`、Claude は `WebFetch`/`WebSearch` を使えなくします）。その実行だけ Web を使わせたいときは `--allow-web` を付けます。起動の前に依頼文を必ず `text-gate`（`~/.local/bin/text-gate`）に通し、偽のドメインがあるときや `text-gate` が無いときは起動しません。結果とライブコンソールの表示も同じように通し、見えない文字を取り除き、偽のドメインには警告と punycode を添えます。詳しくは [`docs/runner-configuration.md`](docs/runner-configuration.md#web-access-and-text-gate) を見てください。
 - worker はそれぞれ独立したプロセスグループとして動きます。打ち切り時間（`--timeout-ms` かプロファイルの `timeoutMs`。どちらもなければ 2 分なので、実際の作業では長めに指定してください）が来ると、worker が起動したものごと止めます。worker が終わったときに残っているプロセスも止めます。Ctrl-C を押すと、すべての worker を止めて、中断したことを記録します。
 - `orchestrate` では、各作業がリポジトリの複製の中で動きます。本物のリポジトリに書き戻すのは、その作業の `ownerScope` の中の変更だけです。範囲の外を書き換えた作業は失敗になり、実行中に本物のリポジトリで変更したファイルが上書きされることはありません。
 
