@@ -12,11 +12,17 @@
         "workspace-write",
         "-c",
         "approval_policy=\"never\"",
+        "-c",
+        "web_search=\"disabled\"",
         "--color",
         "never",
         "--output-last-message",
         "{output_file}",
         "{prompt}"
+      ],
+      "webDisableArgs": [
+        "-c",
+        "web_search=\"disabled\""
       ],
       "prompt": "argument",
       "result": "output-file",
@@ -27,11 +33,19 @@
       "command": "claude",
       "args": [
         "--print",
+        "--disallowedTools",
+        "WebFetch",
+        "WebSearch",
         "--output-format",
         "text",
         "--permission-mode",
         "acceptEdits",
         "{prompt}"
+      ],
+      "webDisableArgs": [
+        "--disallowedTools",
+        "WebFetch",
+        "WebSearch"
       ],
       "prompt": "argument",
       "result": "stdout",
@@ -49,8 +63,12 @@
         "streaming-messages-json",
         "--include-partial-messages",
         "--verbatim",
+        "--disable-web-search",
         "--single",
         "{prompt}"
+      ],
+      "webDisableArgs": [
+        "--disable-web-search"
       ],
       "prompt": "argument",
       "result": "stdout",
