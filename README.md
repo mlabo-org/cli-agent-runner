@@ -101,6 +101,7 @@ Once a run finishes successfully within its scope, the runner stops. It does not
 - macOS with Codex desktop and a Codex CLI that exposes plugin commands, or with Claude Code.
 - Git. The target (jobsite) must be inside a Git repository.
 - Node.js 22 or later. The runtime uses only the Node standard library and has no package dependencies.
+- [text-gate](https://github.com/mlabo-org/text-gate) installed at `~/.local/bin/text-gate` (or an absolute path in `CLI_AGENT_RUNNER_TEXT_GATE`). Every prompt and result passes through it, and without it no worker is launched. Build it with Rust 1.85 or later as described in its README.
 - An authenticated CLI for each runner profile you actually select:
 
 | Profile | Command | Needed |
@@ -339,6 +340,7 @@ flowchart LR
 - Codex デスクトップ版とプラグイン用のコマンドを備えた Codex CLI、または Claude Code が動く macOS。
 - Git。作業対象（jobsite）は Git リポジトリの中にある必要があります。
 - Node.js 22 以降。Node の標準ライブラリだけで動き、追加のパッケージは要りません。
+- `~/.local/bin/text-gate` に入れた [text-gate](https://github.com/mlabo-org/text-gate)（別の場所なら `CLI_AGENT_RUNNER_TEXT_GATE` に絶対パスを指定）。依頼文と結果は必ずここを通り、無いと worker を起動しません。入れ方は text-gate の README のとおりで、Rust 1.85 以降でビルドします。
 - 実際に選ぶプロファイルに対応した、ログイン済みの CLI。
 
 | プロファイル | コマンド | 必要になる場面 |
