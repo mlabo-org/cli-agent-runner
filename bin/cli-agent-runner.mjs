@@ -37,6 +37,8 @@ const STATE_DIR_NAME = ".cli-agent-runner";
 const LEGACY_DOCS_SEGMENTS = ["docs", "codex"];
 const RUNNER_FILE = "runner.md";
 const DEFAULT_RUNNER_TIMEOUT_MS = 120000;
+// An inherited API key outranks the claude.ai login in `claude -p` and bills the API instead of the plan.
+const CLAUDE_API_KEY_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"];
 const DELEGATION_MODES = ["leaf", "local_orchestrator"];
 const DELEGATION_BROKER_CONTRACT =
   "leaf workers cannot delegate. local_orchestrator workers may request descendants only through the runner-owned delegation broker; the broker inherits task lineage, runner profile, authority scope, supervision, and the finite remaining depth.";
@@ -1006,6 +1008,9 @@ async function runConfiguredCli(commandContext, packet, options) {
       });
     }
     const childEnvironment = { ...process.env };
+    if (path.basename(invocation.command) === "claude") {
+      for (const name of CLAUDE_API_KEY_ENV) delete childEnvironment[name];
+    }
     if (delegationBroker) childEnvironment[DELEGATION_BROKER_ENV] = delegationBroker.url;
     else delete childEnvironment[DELEGATION_BROKER_ENV];
     result = await runStreamingProcess({
