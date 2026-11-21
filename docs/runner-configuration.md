@@ -45,9 +45,27 @@ Each runner supports these fields:
 - `timeoutMs`: optional positive process timeout in milliseconds. `--timeout-ms` overrides it; without either, the timeout is 120000 ms (2 minutes). Set a larger value for real agent work. The timeout stops the worker's whole process group. It is independent of the supervision `hard_timeout`, which is workflow guidance for the parent rather than a process limit.
 - `defaultHierarchyDepth`: optional integer from `0` through `8`. It defines the parent-owned maximum descendant permission when the invocation omits hierarchy fields; `0` explicitly declares that the model profile may not create descendants, `1` permits direct children only, and larger values produce a bounded `n_level` hierarchy. The assigned worker decides whether to use any permitted depth. Model suitability belongs here rather than in an unrecorded per-run parent decision. Explicit hierarchy fields that replace this profile value require `--hierarchy-override-reason user_request|safety_boundary|scope_boundary|capability_boundary`; the CLI rejects an unreasoned replacement before assignment append or process launch.
 - `webDisableArgs`: optional array of non-empty strings without placeholders. It names the arguments that keep the child off the web, and it must appear in `args` as one contiguous run. They stay in place by default; `--allow-web` removes exactly that run for one invocation. An overlay that replaces `args` without that run fails validation, so override both together (`"webDisableArgs": []` declares a profile with no web switch).
+- `unsetEnv`: optional array of environment variable names. Each one is removed from the environment this profile's child inherits; the rest is passed through unchanged. No bundled profile sets it, so by default a child sees the same environment as the runner.
 - `description`: optional single-line description.
 
 Available argument placeholders are `{prompt}`, `{cwd}`, and `{output_file}`. The child process always runs with the jobsite as its process working directory, inherits the current environment, and runs as its own process group; processes it leaves running are stopped when it exits. Captured stdout and stderr keep their last 8 MiB each, with a truncation marker at the start when earlier output was dropped. The machine-checkable scope guard fails closed when Git inspection is unavailable, but it remains a post-run Git change detector rather than an operating-system write sandbox; ignored paths and paths outside the repository require the selected provider's permission model or a separate sandbox.
+
+## Claude: plan login or API key
+
+`claude --print` uses `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` ahead of the claude.ai login when either is set, so a child started from an environment that carries one is billed to the API, not to your plan. The bundled `claude-cli` profile leaves that choice to your environment. To make `claude-cli` children always use your own claude.ai login, add this to your user config:
+
+```json
+{
+  "version": 1,
+  "runners": {
+    "claude-cli": {
+      "unsetEnv": ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"]
+    }
+  }
+}
+```
+
+Check Anthropic's [Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance) page for which uses a subscription login covers; products and services built on Claude are directed to API keys there.
 
 ## Web access and text-gate
 

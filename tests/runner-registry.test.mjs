@@ -250,6 +250,60 @@ test("bundled Claude and Grok profiles launch headlessly and normalize stdout", 
   }
 });
 
+test("claude-cli passes Anthropic keys through unless a profile lists them in unsetEnv", () => {
+  for (const [label, overlay, expectKey] of [
+    ["passthrough", null, true],
+    ["unset", { unsetEnv: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] }, false],
+  ]) {
+    const repo = makeTempGitRepo();
+    const fakeBin = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-env-claude-"));
+    const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+    const envCapture = path.join(fakeBin, "env.json");
+    try {
+      if (overlay) {
+        writeJson(path.join(configHome, "cli-agent-runner", "runners.json"), {
+          version: 1,
+          runners: { "claude-cli": overlay },
+        });
+      }
+      intake(repo, `env-${label}`);
+      installFakeRunner(fakeBin, "claude");
+      const result = runWorker(repo, `env-${label}`, "claude-cli", {
+        ...isolatedEnvironment(configHome),
+        PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ""}`,
+        ANTHROPIC_API_KEY: "test-placeholder",
+        ANTHROPIC_AUTH_TOKEN: "test-placeholder",
+        CLI_AGENT_RUNNER_CAPTURE_ENV: envCapture,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const names = JSON.parse(readFileSync(envCapture, "utf8"));
+      assert.equal(names.includes("ANTHROPIC_API_KEY"), expectKey, label);
+      assert.equal(names.includes("ANTHROPIC_AUTH_TOKEN"), expectKey, label);
+      assert.ok(names.includes("PATH"), label);
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+      rmSync(fakeBin, { recursive: true, force: true });
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  }
+});
+
+test("unsetEnv rejects values that are not environment variable names", () => {
+  const configHome = mkdtempSync(path.join(os.tmpdir(), "cli-agent-runner-config-home-"));
+  try {
+    writeJson(path.join(configHome, "cli-agent-runner", "runners.json"), {
+      version: 1,
+      runners: { "claude-cli": { unsetEnv: ["NOT A NAME"] } },
+    });
+    assert.throws(() => loadRunnerRegistry({
+      invocationCwd: REPO_ROOT,
+      environment: isolatedEnvironment(configHome),
+    }), /unsetEnv must be an array of environment variable names/);
+  } finally {
+    rmSync(configHome, { recursive: true, force: true });
+  }
+});
+
 test("Codex, Claude, and Grok use the same explicit local-orchestrator broker contract", () => {
   for (const [runnerId, executable] of [
     ["codex-cli", "codex"],
@@ -511,6 +565,9 @@ function installFakeRunner(directory, executable) {
 const { writeFileSync } = require("node:fs");
 if (process.env.CLI_AGENT_RUNNER_CAPTURE) {
   writeFileSync(process.env.CLI_AGENT_RUNNER_CAPTURE, JSON.stringify(process.argv.slice(2)), "utf8");
+}
+if (process.env.CLI_AGENT_RUNNER_CAPTURE_ENV) {
+  writeFileSync(process.env.CLI_AGENT_RUNNER_CAPTURE_ENV, JSON.stringify(Object.keys(process.env)), "utf8");
 }
 process.stdout.write("fake configured runner completed\\n");
 `, "utf8");
