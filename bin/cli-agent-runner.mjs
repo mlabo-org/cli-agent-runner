@@ -48,7 +48,7 @@ const DEBUG_INTEGRITY =
   "For debug or repair work, identify root cause and make the intended outcome succeed; log-only, fallback-only, skip-only, failure-output-only, or return-to-main-loop-only changes are not completion.";
 const CODING_CONDUCT_GATE_NAME = "Coding Conduct Gate";
 const CODING_CONDUCT_RULES = [
-  "Reuse mature GitHub/npm OSS directly when it fits the requirement and dependency approval or scope permits it; do not reimplement mature solved problems.",
+  "Study mature GitHub/npm OSS that fits the requirement and adopt its methods; do not reimplement mature solved problems from scratch. Installing it or adding it as a dependency follows the host's rules and the repository policy.",
   "Start bug analysis from first principles: expected outcome, actual behavior, invariants, inputs, execution path, evidence, and competing hypotheses before choosing a fix.",
   "Do not add fallback implementations that hide main-flow errors; fix the main flow or report unresolved status or explicit user-approved temporary containment.",
 ];
@@ -1876,8 +1876,8 @@ function renderDecisions(context) {
 ## D-${context.taskId}-008 ${CODING_CONDUCT_GATE_NAME}
 
 ${renderCodingConductFields()}
-- impact: coding and debug assignments must prefer mature OSS reuse over reimplementation, start bug analysis from first principles, and reject fallback implementations that hide main-flow errors.
-- contract_coverage_required: evidence must record OSS reuse/non-reuse rationale and no-hidden-fallback status for coding/debug work.
+- impact: coding and debug assignments must prefer adopting mature OSS methods over reimplementation, start bug analysis from first principles, and reject fallback implementations that hide main-flow errors.
+- contract_coverage_required: evidence must record OSS method-adoption/non-adoption rationale and no-hidden-fallback status for coding/debug work.
 
 ## D-${context.taskId}-009 Caller-Defined Roles
 
@@ -1911,7 +1911,7 @@ function renderAudit(context) {
 - Run implementation checks for the active task.
 - Record skipped checks with reasons.
 - Record each collected result with \`lifecycle_disposition\`; \`state_retired\` requires exactly one reason from ${SUPERVISION_RETIRE_CANCEL_REASONS.join(", ")}, while \`continuation_expected\` records \`cancel_reason: none\`.
-- Record ${CODING_CONDUCT_GATE_NAME} checks, including OSS reuse decision, first-principles bug analysis when applicable, and no hidden fallback implementation.
+- Record ${CODING_CONDUCT_GATE_NAME} checks, including OSS method-adoption decision, first-principles bug analysis when applicable, and no hidden fallback implementation.
 - For debug or repair work, record root cause, fix, and verification that the intended outcome now succeeds.
 - If metacognitive_gate_required is true, record ${METACOGNITIVE_GATE_FIELDS.join(", ")}.
 - Record ${CONTRACT_COVERAGE_GATE_NAME}: ${CONTRACT_COVERAGE_FIELDS.join(", ")}. Task finalization is not accepted until every D-* decision, C-* completion condition, and source/spec check has a deterministic typed reference.
@@ -2181,7 +2181,7 @@ function normalizeTaskCodingConduct(text) {
 }
 
 function normalizeAuditCodingConduct(text) {
-  const block = `- Record ${CODING_CONDUCT_GATE_NAME} checks, including OSS reuse decision, first-principles bug analysis when applicable, and no hidden fallback implementation.`;
+  const block = `- Record ${CODING_CONDUCT_GATE_NAME} checks, including OSS method-adoption decision, first-principles bug analysis when applicable, and no hidden fallback implementation.`;
   if (text.includes(CODING_CONDUCT_GATE_NAME) && /first-principles bug analysis/i.test(text)) return text;
   return insertAfterLineMatching(text, /^- Record any retire\/cancel action.*$/m, block, block);
 }

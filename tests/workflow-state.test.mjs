@@ -1118,7 +1118,7 @@ if (!prompt.includes("Silence before heartbeat deadline is neutral, not failure"
 if (!prompt.includes("Parent must not cancel or interrupt a quiet worker, mark its workflow state_retired, or replace it during the no-interrupt window")) process.exit(10);
 if (!prompt.includes("Explicit completed, blocked, or failed results are not silence; collect and integrate them immediately")) process.exit(15);
 if (!prompt.includes("If still running at heartbeat_interval, self-report progress with fields completed/current/blocker/ETA; use blocker: none and ETA: unknown when unknown.")) process.exit(16);
-if (!prompt.includes("Reuse mature GitHub/npm OSS directly")) process.exit(17);
+if (!prompt.includes("Study mature GitHub/npm OSS that fits the requirement and adopt its methods")) process.exit(17);
 if (!prompt.includes("Start bug analysis from first principles")) process.exit(18);
 if (!prompt.includes("Do not add fallback implementations that hide main-flow errors")) process.exit(19);
 if (!prompt.includes("missed heartbeat -> soft ping/status request -> grace wait -> stale mark")) process.exit(11);
@@ -3025,7 +3025,7 @@ function supervisionFieldLines() {
 
 function codingConductFieldLines() {
   return `- coding_conduct_gate: Coding Conduct Gate
-- coding_conduct_rules: Reuse mature GitHub/npm OSS directly when it fits the requirement and dependency approval or scope permits it; do not reimplement mature solved problems. | Start bug analysis from first principles: expected outcome, actual behavior, invariants, inputs, execution path, evidence, and competing hypotheses before choosing a fix. | Do not add fallback implementations that hide main-flow errors; fix the main flow or report unresolved status or explicit user-approved temporary containment.`;
+- coding_conduct_rules: Study mature GitHub/npm OSS that fits the requirement and adopt its methods; do not reimplement mature solved problems from scratch. Installing it or adding it as a dependency follows the host's rules and the repository policy. | Start bug analysis from first principles: expected outcome, actual behavior, invariants, inputs, execution path, evidence, and competing hypotheses before choosing a fix. | Do not add fallback implementations that hide main-flow errors; fix the main flow or report unresolved status or explicit user-approved temporary containment.`;
 }
 
 function stripSupervisionLines(text) {

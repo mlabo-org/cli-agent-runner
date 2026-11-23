@@ -99,8 +99,8 @@ description: >-
 ## Coding Conduct Gate
 
 - CLI Agent Runner must treat these conduct rules as SSOT-level behavior for coding and debug work. Generated assignments, handoff material, runner prompts, runner packets, and validation must carry `coding_conduct_gate` and `coding_conduct_rules` fields for modern workflow state.
-- If a mature open-source solution exists on GitHub or npm and fits the requirement, CLI Agent Runner must reuse it directly instead of reimplementing the solved problem. Dependency installation or package adoption still requires that dependency addition is inside the active scope, permitted by the repository policy, and approved when approval is required.
-- When no mature GitHub/npm solution is reused, the worker must record the non-reuse reason: scope restriction, policy restriction, mismatch with requirements, security/licensing concern, dependency approval not granted, or no mature solution found.
+- If a mature open-source solution exists on GitHub or npm and fits the requirement, CLI Agent Runner must study it and adopt its methods instead of reinventing the solved approach. Installing it or adding it as a dependency follows the host's rules and the repository policy, and stays inside the active scope with approval when approval is required.
+- When no mature GitHub/npm solution's methods are adopted, the worker must record the non-adoption reason: scope restriction, policy restriction, mismatch with requirements, security/licensing concern, dependency approval not granted, or no mature solution found.
 - Bug analysis must begin from first principles before patching: intended contract, expected outcome, actual behavior, invariants, inputs, execution path, observations, and competing hypotheses.
 - Fallback implementations are prohibited when they hide errors in the main flow, preserve a faulty premise, or allow completion to be claimed without fixing the intended path. The correct result is to fix the main flow or report unresolved status with the next investigation.
 - A user-explicit temporary containment may be recorded only as containment, not as completion, and must leave the root cause, failing main flow, residual risk, and removal condition visible.
@@ -109,14 +109,14 @@ description: >-
 
 - This gate is limited to actual debug, repair, failure-correction, source-of-truth correction, plugin-contract correction, or generated/cache/runtime inconsistency investigation. Ordinary source, config, test, canonical-document, and refactor work does not activate it by itself.
 - The gate shapes the producer assignment for actual repair work; it is not a post-success report validator and never reopens a successful `run --runner` result or successful orchestration.
-- For coding work, CLI Agent Runner still applies the Coding Conduct Gate's mature GitHub/npm reuse decision without turning that decision into a post-run acceptance gate.
+- For coding work, CLI Agent Runner still applies the Coding Conduct Gate's mature GitHub/npm method-adoption decision without turning that decision into a post-run acceptance gate.
 - `--work-type <id>` is semantic command metadata for the source CLI, not a replacement for this gate or the Debugging Integrity Gate. Known ids are `auto`, `documentation`, `source-change`, and `debug`.
 - `--work-type auto` preserves debug/repair keyword inference. `--work-type source-change` and `--work-type documentation` do not activate this gate; `--work-type debug` forces it for the producer assignment.
 - CLI Agent Runner must treat gate-required work as context-impact work, not only local patch work. Result quality degrades when CLI Agent Runner stays local, so assignments, audits, handoffs, runner packets, and final reports must inspect before/after context effects and cross-feature consequences before claiming completion.
 - Gate-required work must separate the intended contract, observed mismatch, affected source/generated/cache/runtime surfaces, changed assumptions, neighboring feature impact, before-context effects, after-context effects, cross-feature consequences, verification performed, skipped checks, unresolved risks, and next investigation.
 - For an actual repair assignment, the worker identifies whether the mismatch is in source, generated workflow state, cache copy, runtime output, activation state, user request interpretation, or verification criteria before choosing the repair route.
 - The parent must reject local-wrapper fixes that preserve a faulty premise. Before adding an adapter, compatibility branch, defensive return, default filler, or wrapper workflow, reconsider whether the selected route, source-of-truth, plugin contract, data model, generated artifact, cache/runtime surface, or verification target is wrong. Do not add fallback implementations that hide main-flow errors.
-- Passive checklists, prose-only `debugging_integrity` text, log-only completion, fallback-only completion, skip-only completion, failure-output-only completion, hidden-fallback completion, avoidable reimplementation of mature OSS, and local-wrapper fixes without premise reconsideration are non-completion for gate-required work.
+- Passive checklists, prose-only `debugging_integrity` text, log-only completion, fallback-only completion, skip-only completion, failure-output-only completion, hidden-fallback completion, avoidable reinvention of an approach a fitting mature OSS solution already provides (instead of adopting its methods), and local-wrapper fixes without premise reconsideration are non-completion for gate-required work.
 - If a gate-required assignment cannot inspect neighboring features or before/after context within its scope, it must report the skipped check, why it was skipped, the risk that remains, and the next investigation that would close the gap.
 
 ## Contract Coverage Gate
@@ -223,7 +223,7 @@ Use the source CLI when the user wants to test source-tree behavior before plugi
    When `run --runner <id>` exits zero, the scope guard passes, and the worker result names no blocker, or all declared orchestration jobs succeed in scope, the process result is complete and terminal. A worker result whose last `blockers:` (or `blocker:`) field names a real blocker, in any Markdown list, bold, or bare-line form or as indented list items under an empty field, or in a JSON object required by `expected_output` (including JSON `status` `blocked`, `unresolved`, `failed`, or `error`), is recorded as `failed` with `worker reported blocker: ...` even when the child process exited zero, and enters cause-bound failure handling. No-blocker phrasings such as `none`, `None found`, `no blockers`, `(none)`, `n/a`, and `なし` do not fail the run. Store the minimal completed result and do not invoke `collect`, `finalize`, `verify-assignments`, `doctor`, reviewer, or another post-success validator.
    Use `--delegation-mode local_orchestrator` only when the assigned worker owns a coherent responsibility whose bounded internal helper split remains local to that worker. The prompt exposes the worker-only `delegate` command. Do not invoke `delegate` from the parent shell; it fails closed without the runner-owned broker environment.
 10. Ensure generated assignments and runner prompts carry the known producer requirements before launch. A successful `run --runner` result or successful orchestration bypasses every collection, lifecycle, Contract Coverage, and metacognitive post-success gate. Failed or blocked output bypasses the quiet-worker stale path and enters only cause-bound failure handling.
-11. Treat marketplace registration, plugin cache refresh (`~/.codex/plugins/cache/` or `~/.claude/plugins/cache/`), and host restart/new-thread or new-session activation as separate work unless the user explicitly includes them.
+11. Treat marketplace registration, plugin activation (Codex: plugin cache refresh in `~/.codex/plugins/cache/`; Claude Code with this local directory marketplace: no cache refresh, the next session start or `/reload-plugins`), and host restart/new-thread or new-session activation as separate work unless the user explicitly includes them.
 
 If source CLI output still names legacy `docs/codex`, treat that as source implementation drift to report or fix under the active task scope. Do not let legacy output redefine the current skill contract.
 
@@ -259,9 +259,10 @@ If source CLI output still names legacy `docs/codex`, treat that as source imple
 ## Source And Cache Boundary
 
 - Source repository changes take effect for direct source CLI runs immediately.
-- Installed plugin behavior uses the host's cached plugin copy (`~/.codex/plugins/cache/` in Codex, `~/.claude/plugins/cache/` in Claude Code) and may require a refresh plus a host restart or a new thread or session before the updated skill, agent metadata, CLI, or assets are active.
-- Refresh cache only from validated source and only for the named plugin in scope. Do not refresh broadly or edit cache files directly.
-- When cache activation is out of scope, report that source is updated but plugin activation is pending cache refresh/restart.
+- In Codex, installed plugin behavior uses the cached plugin copy (`~/.codex/plugins/cache/`) and may require a refresh plus a host restart or a new thread before the updated skill, agent metadata, CLI, or assets are active.
+- In Claude Code, this plugin is installed from the local directory marketplace `~/plugins/cli-agent-runner` and loads in place from that checkout, not from a copy under `~/.claude/plugins/cache/`; source edits become active at the next session start or after `/reload-plugins`, with no cache refresh.
+- Where a cache copy is used (Codex), refresh it only from validated source and only for the named plugin in scope. Do not refresh broadly or edit cache files directly.
+- When activation is out of scope, report that source is updated but plugin activation is pending (Codex: cache refresh/restart; Claude Code: next session or `/reload-plugins`).
 
 ## Output Shape
 

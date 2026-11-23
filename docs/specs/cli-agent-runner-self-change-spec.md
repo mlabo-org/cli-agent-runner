@@ -155,9 +155,10 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      claiming completion for gate-required work.
    - Passive checklists, prose-only `debugging_integrity`, log-only completion,
      fallback-only completion, skip-only completion, failure-output-only
-     completion, hidden-fallback completion, avoidable reimplementation of
-     mature OSS, and local-wrapper fixes without premise reconsideration are
-     non-completion for gate-required work.
+     completion, hidden-fallback completion, avoidable reinvention of an
+     approach a fitting mature OSS solution already provides (instead of
+     adopting its methods), and local-wrapper fixes without premise
+     reconsideration are non-completion for gate-required work.
    - If neighboring feature or before/after context checks cannot be completed
      inside the active scope, the skipped checks, reason, remaining risk, and
      next investigation must be recorded instead of treating the gate as passed.
@@ -167,13 +168,13 @@ Items 1-11 are CLI Agent Runner self changes. Item 12 is external legacy cleanup
      generated assignments, runner prompts, runner packets, handoff material,
      and validation for modern workflow state.
    - If a mature open-source solution exists on GitHub or npm and fits the
-     requirement, CLI Agent Runner must reuse it directly instead of
-     reimplementing the solved problem.
-   - Dependency installation or package adoption still requires that dependency
-     addition is inside the active scope, permitted by repository policy, and
-     approved when approval is required.
-   - When no mature GitHub/npm solution is reused, the worker must record the
-     non-reuse reason: scope restriction, policy restriction, mismatch with
+     requirement, CLI Agent Runner must study it and adopt its methods instead
+     of reinventing the solved approach.
+   - Installing it or adding it as a dependency follows the host's rules and
+     the repository policy, and stays inside the active scope with approval
+     when approval is required.
+   - When no mature GitHub/npm solution's methods are adopted, the worker must
+     record the non-adoption reason: scope restriction, policy restriction, mismatch with
      requirements, security/licensing concern, dependency approval not granted,
      or no mature solution found.
    - Bug analysis must begin from first principles before patching: intended
